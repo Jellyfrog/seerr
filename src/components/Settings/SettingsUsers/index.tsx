@@ -32,6 +32,13 @@ const messages = defineMessages('components.Settings.SettingsUsers', {
   mediaServerLogin: 'Enable {mediaServerName} Sign-In',
   mediaServerLoginTip:
     'Allow users to sign in using their {mediaServerName} account',
+  plexLogin: 'Enable Plex Sign-In',
+  plexLoginTip: 'Allow users to sign in using their Plex account',
+  jellyfinLogin: 'Enable {jellyfinServerName} Sign-In',
+  jellyfinLoginTip:
+    'Allow users to sign in using their {jellyfinServerName} account',
+  secondaryProviderTip:
+    '{serverName} is not the media server, so only users who have linked their {serverName} account from their profile will be able to sign in.',
   atLeastOneAuth: 'At least one authentication method must be selected.',
   newPlexLogin: 'Enable New {mediaServerName} Sign-In',
   newPlexLoginTip:
@@ -58,13 +65,18 @@ const SettingsUsers = () => {
     .object()
     .shape({
       localLogin: yup.boolean(),
-      mediaServerLogin: yup.boolean(),
+      plexLogin: yup.boolean(),
+      jellyfinLogin: yup.boolean(),
     })
     .test({
       name: 'atLeastOneAuth',
       test: function (values) {
         const isValid = (
-          ['localLogin', 'mediaServerLogin'] as (keyof typeof values)[]
+          [
+            'localLogin',
+            'plexLogin',
+            'jellyfinLogin',
+          ] as (keyof typeof values)[]
         ).some((field) => !!values[field]);
 
         if (isValid) return true;
@@ -79,6 +91,11 @@ const SettingsUsers = () => {
     return <LoadingSpinner />;
   }
 
+  const jellyfinServerName =
+    settings.currentSettings.jellyfinServerType === MediaServerType.EMBY
+      ? 'Emby'
+      : 'Jellyfin';
+
   const mediaServerFormatValues = {
     mediaServerName:
       settings.currentSettings.mediaServerType === MediaServerType.JELLYFIN
@@ -89,6 +106,12 @@ const SettingsUsers = () => {
             ? 'Plex'
             : undefined,
   };
+
+  const plexIsPrimary =
+    settings.currentSettings.mediaServerType === MediaServerType.PLEX;
+  const jellyfinIsPrimary =
+    settings.currentSettings.mediaServerType === MediaServerType.JELLYFIN ||
+    settings.currentSettings.mediaServerType === MediaServerType.EMBY;
 
   return (
     <>
@@ -108,7 +131,8 @@ const SettingsUsers = () => {
         <Formik
           initialValues={{
             localLogin: data?.localLogin,
-            mediaServerLogin: data?.mediaServerLogin,
+            plexLogin: data?.plexLogin,
+            jellyfinLogin: data?.jellyfinLogin,
             newPlexLogin: data?.newPlexLogin,
             movieQuotaLimit: data?.defaultQuotas.movie.quotaLimit ?? 0,
             movieQuotaDays: data?.defaultQuotas.movie.quotaDays ?? 7,
@@ -122,7 +146,8 @@ const SettingsUsers = () => {
             try {
               await axios.post('/api/v1/settings/main', {
                 localLogin: values.localLogin,
-                mediaServerLogin: values.mediaServerLogin,
+                plexLogin: values.plexLogin,
+                jellyfinLogin: values.jellyfinLogin,
                 newPlexLogin: values.newPlexLogin,
                 defaultQuotas: {
                   movie: {
@@ -186,38 +211,62 @@ const SettingsUsers = () => {
                         }
                       />
                       <LabeledCheckbox
-                        id="mediaServerLogin"
+                        id="plexLogin"
                         className="mt-4"
-                        label={intl.formatMessage(
-                          messages.mediaServerLogin,
-                          mediaServerFormatValues
-                        )}
-                        description={intl.formatMessage(
-                          messages.mediaServerLoginTip,
-                          mediaServerFormatValues
-                        )}
+                        label={intl.formatMessage(messages.plexLogin)}
+                        description={
+                          plexIsPrimary
+                            ? intl.formatMessage(messages.plexLoginTip)
+                            : `${intl.formatMessage(
+                                messages.plexLoginTip
+                              )} — ${intl.formatMessage(
+                                messages.secondaryProviderTip,
+                                { serverName: 'Plex' }
+                              )}`
+                        }
                         onChange={() =>
-                          setFieldValue(
-                            'mediaServerLogin',
-                            !values.mediaServerLogin
-                          )
+                          setFieldValue('plexLogin', !values.plexLogin)
                         }
                       />
-                      {!values.mediaServerLogin && values.localLogin && (
-                        <div className="mt-4">
-                          <Alert
-                            title={intl.formatMessage(
-                              messages.disabledMediaServerLoginWarning,
-                              {
-                                applicationTitle:
-                                  settings.currentSettings.applicationTitle,
-                                ...mediaServerFormatValues,
-                              }
-                            )}
-                            type="warning"
-                          />
-                        </div>
-                      )}
+                      <LabeledCheckbox
+                        id="jellyfinLogin"
+                        className="mt-4"
+                        label={intl.formatMessage(messages.jellyfinLogin, {
+                          jellyfinServerName,
+                        })}
+                        description={
+                          jellyfinIsPrimary
+                            ? intl.formatMessage(messages.jellyfinLoginTip, {
+                                jellyfinServerName,
+                              })
+                            : `${intl.formatMessage(messages.jellyfinLoginTip, {
+                                jellyfinServerName,
+                              })} — ${intl.formatMessage(
+                                messages.secondaryProviderTip,
+                                { serverName: jellyfinServerName }
+                              )}`
+                        }
+                        onChange={() =>
+                          setFieldValue('jellyfinLogin', !values.jellyfinLogin)
+                        }
+                      />
+                      {((plexIsPrimary && !values.plexLogin) ||
+                        (jellyfinIsPrimary && !values.jellyfinLogin)) &&
+                        values.localLogin && (
+                          <div className="mt-4">
+                            <Alert
+                              title={intl.formatMessage(
+                                messages.disabledMediaServerLoginWarning,
+                                {
+                                  applicationTitle:
+                                    settings.currentSettings.applicationTitle,
+                                  ...mediaServerFormatValues,
+                                }
+                              )}
+                              type="warning"
+                            />
+                          </div>
+                        )}
                     </div>
                   </div>
                 </div>

@@ -4,6 +4,7 @@ import PlexAPI from '@server/api/plexapi';
 import PlexTvAPI from '@server/api/plextv';
 import TautulliAPI from '@server/api/tautulli';
 import { ApiErrorCode } from '@server/constants/error';
+import { MediaServerType } from '@server/constants/server';
 import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
 import { MediaRequest } from '@server/entity/MediaRequest';
@@ -83,6 +84,12 @@ settingsRoutes.post('/main', async (req, res) => {
   const settings = getSettings();
 
   settings.main = merge(settings.main, req.body);
+
+  // Keep the deprecated single switch in step with the per-provider flags so
+  // that older API consumers reading it still see something meaningful.
+  settings.main.mediaServerLogin =
+    settings.main.plexLogin || settings.main.jellyfinLogin;
+
   await settings.save();
 
   return res.status(200).json(settings.main);
@@ -333,6 +340,22 @@ settingsRoutes.post('/jellyfin', async (req, res, next) => {
     Object.assign(settings.jellyfin, req.body);
     settings.jellyfin.serverId = result.Id;
     settings.jellyfin.name = result.ServerName;
+
+    // While Jellyfin/Emby is the media backend its flavour is dictated by
+    // mediaServerType. Only when it is an authentication provider on its own
+    // can the admin choose it here.
+    if (
+      settings.main.mediaServerType === MediaServerType.JELLYFIN ||
+      settings.main.mediaServerType === MediaServerType.EMBY
+    ) {
+      settings.jellyfin.serverType = settings.main.mediaServerType;
+    } else if (
+      req.body.serverType !== MediaServerType.JELLYFIN &&
+      req.body.serverType !== MediaServerType.EMBY
+    ) {
+      settings.jellyfin.serverType = settings.jellyfinServerType;
+    }
+
     await settings.save();
   } catch (e) {
     if (e instanceof ApiError) {

@@ -241,6 +241,19 @@ components:
         localLogin:
           type: boolean
           example: true
+        plexLogin:
+          type: boolean
+          description: Whether users may sign in with Plex
+          example: true
+        jellyfinLogin:
+          type: boolean
+          description: Whether users may sign in with Jellyfin/Emby
+          example: true
+        mediaServerLogin:
+          type: boolean
+          deprecated: true
+          description: Derived from `plexLogin || jellyfinLogin`
+          example: true
         mediaServerType:
           type: number
           example: 1
@@ -521,6 +534,13 @@ components:
         serverID:
           type: string
           readOnly: true
+        serverType:
+          type: number
+          description: >-
+            Whether this connection points at a Jellyfin (2) or an Emby (3)
+            server. Only writable while Jellyfin/Emby is not the media server,
+            in which case the media server type decides.
+          example: 2
     MetadataSettings:
       type: object
       properties:

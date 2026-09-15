@@ -55,6 +55,14 @@ export interface JellyfinSettings {
   libraries: Library[];
   serverId: string;
   apiKey: string;
+  /**
+   * Whether this connection points at a Jellyfin or an Emby server.
+   *
+   * This used to be implied by `main.mediaServerType`, but that only works
+   * while Jellyfin/Emby is the media backend. Now that it can also be nothing
+   * more than an authentication provider, the flavour has to be recorded here.
+   */
+  serverType: MediaServerType.JELLYFIN | MediaServerType.EMBY;
 }
 export interface TautulliSettings {
   hostname?: string;
@@ -143,7 +151,14 @@ export interface MainSettings {
   hideBlocklisted: boolean;
   hideRequested: boolean;
   localLogin: boolean;
+  /**
+   * @deprecated Kept for backwards compatibility with existing config files and
+   * API consumers. Derived from `plexLogin || jellyfinLogin` on read; use the
+   * per-provider flags instead.
+   */
   mediaServerLogin: boolean;
+  plexLogin: boolean;
+  jellyfinLogin: boolean;
   newPlexLogin: boolean;
   discoverRegion: string;
   streamingRegion: string;
@@ -198,6 +213,11 @@ interface FullPublicSettings extends PublicSettings {
   hideRequested: boolean;
   localLogin: boolean;
   mediaServerLogin: boolean;
+  plexLogin: boolean;
+  jellyfinLogin: boolean;
+  plexConfigured: boolean;
+  jellyfinConfigured: boolean;
+  jellyfinServerType: MediaServerType.JELLYFIN | MediaServerType.EMBY;
   movie4kEnabled: boolean;
   series4kEnabled: boolean;
   discoverRegion: string;
@@ -422,6 +442,8 @@ class Settings {
         hideRequested: false,
         localLogin: true,
         mediaServerLogin: true,
+        plexLogin: true,
+        jellyfinLogin: true,
         newPlexLogin: true,
         discoverRegion: '',
         streamingRegion: '',
@@ -455,6 +477,7 @@ class Settings {
         libraries: [],
         serverId: '',
         apiKey: '',
+        serverType: MediaServerType.JELLYFIN,
       },
       tautulli: {},
       metadataSettings: {
@@ -710,6 +733,62 @@ class Settings {
     this.data.public = mergeSettings(this.data.public, data);
   }
 
+  /** Whether a Plex server connection has been set up. */
+  get plexConfigured(): boolean {
+    return !!this.data.plex.machineId || !!this.data.plex.ip;
+  }
+
+  /** Whether a Jellyfin/Emby server connection has been set up. */
+  get jellyfinConfigured(): boolean {
+    return !!this.data.jellyfin.ip;
+  }
+
+  /**
+   * Whether the configured Jellyfin connection is a Jellyfin or an Emby server.
+   * Falls back to `main.mediaServerType` for settings files written before the
+   * flavour was recorded on the connection itself.
+   */
+  get jellyfinServerType(): MediaServerType.JELLYFIN | MediaServerType.EMBY {
+    // While Jellyfin/Emby is the media backend, mediaServerType is the
+    // authoritative answer; deferring to the connection here would let the two
+    // drift apart. The connection only decides when Jellyfin/Emby is nothing
+    // more than an authentication provider.
+    if (
+      this.data.main.mediaServerType === MediaServerType.JELLYFIN ||
+      this.data.main.mediaServerType === MediaServerType.EMBY
+    ) {
+      return this.data.main.mediaServerType;
+    }
+
+    return this.data.jellyfin.serverType === MediaServerType.EMBY
+      ? MediaServerType.EMBY
+      : MediaServerType.JELLYFIN;
+  }
+
+  /**
+   * Whether users may sign in with Plex.
+   *
+   * A connection counts as usable while Plex is the media backend even if no
+   * server has been picked yet, so that sign-in keeps working during setup.
+   */
+  get plexLoginEnabled(): boolean {
+    return (
+      this.data.main.plexLogin &&
+      (this.plexConfigured ||
+        this.data.main.mediaServerType === MediaServerType.PLEX)
+    );
+  }
+
+  /** Whether users may sign in with Jellyfin/Emby. */
+  get jellyfinLoginEnabled(): boolean {
+    return (
+      this.data.main.jellyfinLogin &&
+      (this.jellyfinConfigured ||
+        this.data.main.mediaServerType === MediaServerType.JELLYFIN ||
+        this.data.main.mediaServerType === MediaServerType.EMBY)
+    );
+  }
+
   get fullPublicSettings(): FullPublicSettings {
     return {
       ...this.data.public,
@@ -719,7 +798,12 @@ class Settings {
       hideBlocklisted: this.data.main.hideBlocklisted,
       hideRequested: this.data.main.hideRequested,
       localLogin: this.data.main.localLogin,
-      mediaServerLogin: this.data.main.mediaServerLogin,
+      mediaServerLogin: this.plexLoginEnabled || this.jellyfinLoginEnabled,
+      plexLogin: this.plexLoginEnabled,
+      jellyfinLogin: this.jellyfinLoginEnabled,
+      plexConfigured: this.plexConfigured,
+      jellyfinConfigured: this.jellyfinConfigured,
+      jellyfinServerType: this.jellyfinServerType,
       jellyfinExternalHost: this.data.jellyfin.externalHostname,
       jellyfinForgotPasswordUrl: this.data.jellyfin.jellyfinForgotPasswordUrl,
       movie4kEnabled: this.data.radarr.some(

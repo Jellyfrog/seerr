@@ -35,7 +35,7 @@ const LinkJellyfinQuickConnectModal = ({
   const { user } = useUser();
 
   const mediaServerName =
-    settings.currentSettings.mediaServerType === MediaServerType.JELLYFIN
+    settings.currentSettings.jellyfinServerType === MediaServerType.JELLYFIN
       ? 'Jellyfin'
       : 'Emby';
 

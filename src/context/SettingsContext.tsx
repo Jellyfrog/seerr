@@ -8,7 +8,7 @@ export interface SettingsContextProps {
   children?: React.ReactNode;
 }
 
-const defaultSettings = {
+const defaultSettings: PublicSettingsResponse = {
   initialized: false,
   applicationTitle: 'Seerr',
   applicationUrl: '',
@@ -17,6 +17,11 @@ const defaultSettings = {
   hideRequested: false,
   localLogin: true,
   mediaServerLogin: true,
+  plexLogin: false,
+  jellyfinLogin: false,
+  plexConfigured: false,
+  jellyfinConfigured: false,
+  jellyfinServerType: MediaServerType.JELLYFIN,
   movie4kEnabled: false,
   series4kEnabled: false,
   discoverRegion: '',
