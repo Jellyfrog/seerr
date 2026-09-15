@@ -62,7 +62,7 @@ const LinkJellyfinModal = ({
 
   const applicationName = settings.currentSettings.applicationTitle;
   const mediaServerName =
-    settings.currentSettings.mediaServerType === MediaServerType.EMBY
+    settings.currentSettings.jellyfinServerType === MediaServerType.EMBY
       ? 'Emby'
       : 'Jellyfin';
 
@@ -173,7 +173,7 @@ const LinkJellyfinModal = ({
                     <div className="error">{errors.password}</div>
                   )}
                 </div>
-                {settings.currentSettings.mediaServerType ===
+                {settings.currentSettings.jellyfinServerType ===
                   MediaServerType.JELLYFIN && (
                   <div className="mt-4">
                     <Button

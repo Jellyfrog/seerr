@@ -7,7 +7,7 @@ import Dropdown from '@app/components/Common/Dropdown';
 import PageTitle from '@app/components/Common/PageTitle';
 import LinkJellyfinQuickConnectModal from '@app/components/UserProfile/UserSettings/UserLinkedAccountsSettings/LinkJellyfinQuickConnectModal';
 import useSettings from '@app/hooks/useSettings';
-import { Permission, UserType, useUser } from '@app/hooks/useUser';
+import { Permission, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import PlexOAuth from '@app/utils/plex';
@@ -70,26 +70,26 @@ const UserLinkedAccountsSettings = () => {
 
   const applicationName = settings.currentSettings.applicationTitle;
 
+  // Both providers can be linked at once, so the list is driven by which
+  // account names are actually present rather than by the user's primary type.
   const accounts: LinkedAccount[] = useMemo(() => {
     const accounts: LinkedAccount[] = [];
     if (!user) return accounts;
-    if (user.userType === UserType.PLEX && user.plexUsername)
+    if (user.plexUsername)
       accounts.push({
         type: LinkedAccountType.Plex,
         username: user.plexUsername,
       });
-    if (user.userType === UserType.EMBY && user.jellyfinUsername)
+    if (user.jellyfinUsername)
       accounts.push({
-        type: LinkedAccountType.Emby,
-        username: user.jellyfinUsername,
-      });
-    if (user.userType === UserType.JELLYFIN && user.jellyfinUsername)
-      accounts.push({
-        type: LinkedAccountType.Jellyfin,
+        type:
+          settings.currentSettings.jellyfinServerType === MediaServerType.EMBY
+            ? LinkedAccountType.Emby
+            : LinkedAccountType.Jellyfin,
         username: user.jellyfinUsername,
       });
     return accounts;
-  }, [user]);
+  }, [user, settings.currentSettings.jellyfinServerType]);
 
   const linkPlexAccount = async () => {
     setError(null);
@@ -118,6 +118,9 @@ const UserLinkedAccountsSettings = () => {
     }
   };
 
+  const jellyfinIsEmby =
+    settings.currentSettings.jellyfinServerType === MediaServerType.EMBY;
+
   const linkable = [
     {
       name: 'Plex',
@@ -126,22 +129,19 @@ const UserLinkedAccountsSettings = () => {
         setTimeout(() => linkPlexAccount(), 1500);
       },
       hide:
-        settings.currentSettings.mediaServerType !== MediaServerType.PLEX ||
+        !settings.currentSettings.plexLogin ||
         accounts.some((a) => a.type === LinkedAccountType.Plex),
     },
     {
-      name: 'Jellyfin',
+      name: jellyfinIsEmby ? 'Emby' : 'Jellyfin',
       action: () => setShowJellyfinModal(true),
       hide:
-        settings.currentSettings.mediaServerType !== MediaServerType.JELLYFIN ||
-        accounts.some((a) => a.type === LinkedAccountType.Jellyfin),
-    },
-    {
-      name: 'Emby',
-      action: () => setShowJellyfinModal(true),
-      hide:
-        settings.currentSettings.mediaServerType !== MediaServerType.EMBY ||
-        accounts.some((a) => a.type === LinkedAccountType.Emby),
+        !settings.currentSettings.jellyfinLogin ||
+        accounts.some((a) =>
+          jellyfinIsEmby
+            ? a.type === LinkedAccountType.Emby
+            : a.type === LinkedAccountType.Jellyfin
+        ),
     },
   ].filter((l) => !l.hide);
 
@@ -177,7 +177,10 @@ const UserLinkedAccountsSettings = () => {
     );
   }
 
-  const enableMediaServerUnlink = user?.id !== 1 && passwordInfo?.hasPassword;
+  // Unlinking must leave the user with a way back in: either a local password
+  // or the other linked media server account.
+  const enableMediaServerUnlink =
+    user?.id !== 1 && (passwordInfo?.hasPassword || accounts.length > 1);
 
   return (
     <>
