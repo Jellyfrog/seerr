@@ -404,10 +404,7 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
           jellyfinDeviceId: deviceId,
           jellyfinAuthToken: account.AccessToken,
           permissions: Permission.ADMIN,
-          userType:
-            body.serverType === MediaServerType.JELLYFIN
-              ? UserType.JELLYFIN
-              : UserType.EMBY,
+          userType: settings.jellyfinUserType,
         });
         user.avatar = getUserAvatarUrl(user);
 
@@ -437,10 +434,7 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
         user.jellyfinAuthToken = account.AccessToken;
         user.permissions = Permission.ADMIN;
         user.avatar = getUserAvatarUrl(user);
-        user.userType =
-          body.serverType === MediaServerType.JELLYFIN
-            ? UserType.JELLYFIN
-            : UserType.EMBY;
+        user.userType = settings.jellyfinUserType;
 
         await userRepository.save(user);
       }
@@ -866,7 +860,7 @@ authRoutes.post(
           jellyfinUserId: account.User.Id,
           jellyfinDeviceId: deviceId,
           permissions: settings.main.defaultPermissions,
-          userType: UserType.JELLYFIN,
+          userType: settings.jellyfinUserType,
         });
         user.avatar = getUserAvatarUrl(user);
         await userRepository.save(user);

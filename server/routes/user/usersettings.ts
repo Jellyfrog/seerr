@@ -29,27 +29,6 @@ import { canMakePermissionsChange } from '.';
 const userSettingsRoutes = Router({ mergeParams: true });
 
 /**
- * The user type implied by the accounts still linked to a user.
- *
- * Only the primary media server owns `userType`, so unlinking a secondary
- * account must not demote the user to LOCAL while their primary account is
- * still attached.
- */
-const resolveUserType = (user: User): UserType => {
-  const settings = getSettings();
-
-  if (settings.plexIsPrimary && user.plexId) {
-    return UserType.PLEX;
-  }
-
-  if (settings.jellyfinIsPrimary && user.jellyfinUserId) {
-    return settings.jellyfinUserType;
-  }
-
-  return UserType.LOCAL;
-};
-
-/**
  * Whether the user would still be able to sign in after unlinking `provider`.
  * A local password counts, and so does an account on the other provider.
  */
@@ -349,7 +328,7 @@ userSettingsRoutes.post<{ authToken: string }>(
     user.plexToken = account.authToken;
     // Only the primary media server owns userType; linking Plex as a secondary
     // provider must leave the user's existing identity alone.
-    user.userType = resolveUserType(user);
+    user.userType = user.resolveUserType();
     await userRepository.save(user);
 
     return res.status(204).send();
@@ -397,7 +376,7 @@ userSettingsRoutes.delete<{ id: string }>(
       user.plexId = null;
       user.plexUsername = null;
       user.plexToken = null;
-      user.userType = resolveUserType(user);
+      user.userType = user.resolveUserType();
       await userRepository.save(user);
 
       return res.status(204).send();
@@ -480,7 +459,7 @@ userSettingsRoutes.post<{ username: string; password: string }>(
       user.jellyfinDeviceId = deviceId;
       // Only the primary media server owns userType; linking Jellyfin as a
       // secondary provider must leave the user's existing identity alone.
-      user.userType = resolveUserType(user);
+      user.userType = user.resolveUserType();
       await userRepository.save(user);
 
       return res.status(204).send();
@@ -546,7 +525,7 @@ userSettingsRoutes.delete<{ id: string }>(
       user.jellyfinUsername = null;
       user.jellyfinAuthToken = null;
       user.jellyfinDeviceId = null;
-      user.userType = resolveUserType(user);
+      user.userType = user.resolveUserType();
       await userRepository.save(user);
 
       return res.status(204).send();
@@ -611,7 +590,7 @@ userSettingsRoutes.post<{ secret: string }>(
       user.jellyfinUsername = account.User.Name;
       user.jellyfinAuthToken = account.AccessToken;
       user.jellyfinDeviceId = deviceId;
-      user.userType = resolveUserType(user);
+      user.userType = user.resolveUserType();
       await userRepository.save(user);
 
       return res.status(204).send();
