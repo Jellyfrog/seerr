@@ -216,6 +216,8 @@ interface FullPublicSettings extends PublicSettings {
   mediaServerLogin: boolean;
   plexLogin: boolean;
   jellyfinLogin: boolean;
+  plexLinkEnabled: boolean;
+  jellyfinLinkEnabled: boolean;
   jellyfinServerType: MediaServerType.JELLYFIN | MediaServerType.EMBY;
   movie4kEnabled: boolean;
   series4kEnabled: boolean;
@@ -809,6 +811,25 @@ class Settings {
   }
 
   /**
+   * Whether a user may link a Plex account.
+   *
+   * Deliberately weaker than `plexLoginEnabled`: configuring a Plex server
+   * needs the admin's Plex token, and linking is the only way to obtain one, so
+   * requiring a configured server here would make Plex impossible to add as a
+   * secondary provider at all. On the primary server linking stays available
+   * regardless of the sign-in switch, since a Plex token also drives watchlist
+   * sync.
+   */
+  get plexLinkEnabled(): boolean {
+    return this.plexIsPrimary || this.data.main.plexLogin;
+  }
+
+  /** Whether a user may link a Jellyfin/Emby account. */
+  get jellyfinLinkEnabled(): boolean {
+    return this.jellyfinIsPrimary || this.jellyfinLoginEnabled;
+  }
+
+  /**
    * The deprecated single media-server sign-in switch, derived from the two
    * per-provider ones. Never persisted — deriving it on read is what keeps
    * every consumer seeing the same answer.
@@ -829,6 +850,8 @@ class Settings {
       mediaServerLogin: this.mediaServerLoginEnabled,
       plexLogin: this.plexLoginEnabled,
       jellyfinLogin: this.jellyfinLoginEnabled,
+      plexLinkEnabled: this.plexLinkEnabled,
+      jellyfinLinkEnabled: this.jellyfinLinkEnabled,
       jellyfinServerType: this.jellyfinServerType,
       jellyfinExternalHost: this.data.jellyfin.externalHostname,
       jellyfinForgotPasswordUrl: this.data.jellyfin.jellyfinForgotPasswordUrl,

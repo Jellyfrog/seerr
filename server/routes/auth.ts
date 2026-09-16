@@ -83,6 +83,23 @@ authRoutes.post('/plex', async (req, res, next) => {
     const plextv = new PlexTvAPI(body.authToken);
     const account = await plextv.getUser();
 
+    // Guard before any lookup keyed on the account id: TypeORM ignores an
+    // undefined value in a `where`, so `{ plexId: undefined }` would match the
+    // first user row -- the admin -- and hand out their session.
+    if (!account.id) {
+      logger.error('Plex ID was missing from Plex.tv response', {
+        label: 'API',
+        ip: req.ip,
+        email: account.email,
+        plexUsername: account.username,
+      });
+
+      return next({
+        status: 500,
+        message: 'Something went wrong. Try again.',
+      });
+    }
+
     if (!plexIsPrimary) {
       // Plex is not the media backend, so it cannot vouch for accounts we have
       // never seen: matching an unknown Plex account to an existing Seerr user
@@ -152,20 +169,6 @@ authRoutes.post('/plex', async (req, res, next) => {
         where: { id: 1 },
       });
       const mainPlexTv = new PlexTvAPI(mainUser.plexToken ?? '');
-
-      if (!account.id) {
-        logger.error('Plex ID was missing from Plex.tv response', {
-          label: 'API',
-          ip: req.ip,
-          email: account.email,
-          plexUsername: account.username,
-        });
-
-        return next({
-          status: 500,
-          message: 'Something went wrong. Try again.',
-        });
-      }
 
       if (
         account.id === mainUser.plexId ||

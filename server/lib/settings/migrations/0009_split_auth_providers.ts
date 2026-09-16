@@ -29,16 +29,28 @@ const migrateSplitAuthProviders = (settings: any): AllSettings => {
   // Absent means "on" — that was the default for the old single switch.
   const mediaServerLogin = main.mediaServerLogin !== false;
 
-  if (typeof main.plexLogin !== 'boolean') {
-    main.plexLogin =
-      mediaServerLogin && main.mediaServerType === MediaServerType.PLEX;
-  }
+  // A settings file that never finished setup has no media server to map the
+  // old switch onto. Leaving the flags unset lets the defaults (both on) apply,
+  // so that whichever server setup ends up configuring can be signed in with.
+  // Deriving from NOT_CONFIGURED would disable both and lock the install out of
+  // its own first sign-in.
+  const mediaServerConfigured =
+    main.mediaServerType === MediaServerType.PLEX ||
+    main.mediaServerType === MediaServerType.JELLYFIN ||
+    main.mediaServerType === MediaServerType.EMBY;
 
-  if (typeof main.jellyfinLogin !== 'boolean') {
-    main.jellyfinLogin =
-      mediaServerLogin &&
-      (main.mediaServerType === MediaServerType.JELLYFIN ||
-        main.mediaServerType === MediaServerType.EMBY);
+  if (mediaServerConfigured) {
+    if (typeof main.plexLogin !== 'boolean') {
+      main.plexLogin =
+        mediaServerLogin && main.mediaServerType === MediaServerType.PLEX;
+    }
+
+    if (typeof main.jellyfinLogin !== 'boolean') {
+      main.jellyfinLogin =
+        mediaServerLogin &&
+        (main.mediaServerType === MediaServerType.JELLYFIN ||
+          main.mediaServerType === MediaServerType.EMBY);
+    }
   }
 
   settings.main = main;

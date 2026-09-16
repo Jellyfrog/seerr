@@ -19,6 +19,8 @@ export const defaultSettings: PublicSettingsResponse = {
   mediaServerLogin: true,
   plexLogin: false,
   jellyfinLogin: false,
+  plexLinkEnabled: false,
+  jellyfinLinkEnabled: false,
   jellyfinServerType: MediaServerType.JELLYFIN,
   movie4kEnabled: false,
   series4kEnabled: false,

@@ -184,8 +184,7 @@ const JellyfinLogin = ({ revalidate, serverType }: JellyfinLoginProps) => {
                             jellyfinForgotPasswordUrl
                               ? `${jellyfinForgotPasswordUrl}`
                               : `${baseUrl}/web/index.html#!/${
-                                  settings.currentSettings.mediaServerType ===
-                                  MediaServerType.EMBY
+                                  serverType === MediaServerType.EMBY
                                     ? 'startup/'
                                     : ''
                                 }forgotpassword.html`

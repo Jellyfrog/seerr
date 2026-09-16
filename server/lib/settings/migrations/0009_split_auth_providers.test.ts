@@ -82,6 +82,21 @@ describe('settings migration: split auth providers', () => {
     assert.strictEqual(migrated.jellyfin.serverType, MediaServerType.EMBY);
   });
 
+  it('leaves both providers unset when setup never finished', () => {
+    // Deriving from NOT_CONFIGURED would disable both, and setup itself never
+    // sets either flag — the install could not sign in to its own first admin.
+    const migrated = migrateSplitAuthProviders({
+      main: {
+        mediaServerType: MediaServerType.NOT_CONFIGURED,
+        mediaServerLogin: true,
+      },
+      jellyfin: {},
+    });
+
+    assert.strictEqual(migrated.main.plexLogin, undefined);
+    assert.strictEqual(migrated.main.jellyfinLogin, undefined);
+  });
+
   it('is idempotent', () => {
     const settings = {
       main: { mediaServerType: MediaServerType.EMBY, mediaServerLogin: true },

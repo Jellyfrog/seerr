@@ -129,14 +129,14 @@ const UserLinkedAccountsSettings = () => {
         setTimeout(() => linkPlexAccount(), 1500);
       },
       hide:
-        !settings.currentSettings.plexLogin ||
+        !settings.currentSettings.plexLinkEnabled ||
         accounts.some((a) => a.type === LinkedAccountType.Plex),
     },
     {
       name: jellyfinIsEmby ? 'Emby' : 'Jellyfin',
       action: () => setShowJellyfinModal(true),
       hide:
-        !settings.currentSettings.jellyfinLogin ||
+        !settings.currentSettings.jellyfinLinkEnabled ||
         accounts.some((a) =>
           jellyfinIsEmby
             ? a.type === LinkedAccountType.Emby
@@ -178,18 +178,25 @@ const UserLinkedAccountsSettings = () => {
   }
 
   // Unlinking must leave the user with a way back in: either a local password,
-  // or the other linked account on a provider whose sign-in is still enabled.
-  // This mirrors hasRemainingLoginMethod() on the server — offering an unlink
-  // the server then rejects is worse than not offering it.
-  const otherProviderUsable =
-    (settings.currentSettings.plexLogin &&
-      accounts.some((a) => a.type === LinkedAccountType.Plex)) ||
-    (settings.currentSettings.jellyfinLogin &&
-      accounts.some((a) => a.type !== LinkedAccountType.Plex));
+  // or the account on the OTHER provider, whose sign-in must itself still be
+  // enabled. This mirrors hasRemainingLoginMethod() on the server — offering an
+  // unlink the server then rejects is worse than not offering it, so the check
+  // is per provider rather than "some other account exists".
+  const canUnlink = (type: LinkedAccountType) => {
+    if (user?.id === 1) {
+      return false;
+    }
 
-  const enableMediaServerUnlink =
-    user?.id !== 1 &&
-    (passwordInfo?.hasPassword || (accounts.length > 1 && otherProviderUsable));
+    if (passwordInfo?.hasPassword) {
+      return true;
+    }
+
+    return type === LinkedAccountType.Plex
+      ? settings.currentSettings.jellyfinLogin &&
+          accounts.some((a) => a.type !== LinkedAccountType.Plex)
+      : settings.currentSettings.plexLogin &&
+          accounts.some((a) => a.type === LinkedAccountType.Plex);
+  };
 
   return (
     <>
@@ -251,7 +258,7 @@ const UserLinkedAccountsSettings = () => {
                 </div>
               </div>
               <div className="flex-grow" />
-              {enableMediaServerUnlink && (
+              {canUnlink(acct.type) && (
                 <ConfirmButton
                   onClick={() => {
                     deleteRequest(
