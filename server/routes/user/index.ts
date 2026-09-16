@@ -2,7 +2,6 @@ import JellyfinAPI from '@server/api/jellyfin';
 import PlexTvAPI from '@server/api/plextv';
 import TautulliAPI from '@server/api/tautulli';
 import { MediaType } from '@server/constants/media';
-import { MediaServerType } from '@server/constants/server';
 import { UserType } from '@server/constants/user';
 import dataSource, { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
@@ -693,8 +692,8 @@ router.post(
 
             // In case the user was previously a local account
             if (user.userType === UserType.LOCAL) {
-              user.userType = UserType.PLEX;
               user.plexId = parseInt(account.id);
+              user.userType = user.resolveUserType();
             }
             await userRepository.save(user);
             refreshedUsers += 1;
@@ -707,8 +706,8 @@ router.post(
                 plexId: parseInt(account.id),
                 plexToken: '',
                 avatar: account.thumb,
-                userType: UserType.PLEX,
               });
+              newUser.userType = newUser.resolveUserType();
               await userRepository.save(newUser);
               createdUsers.push(newUser);
             }
@@ -786,11 +785,11 @@ router.post(
             email: jellyfinUser?.Name,
             permissions: settings.main.defaultPermissions,
             avatar: `/avatarproxy/${jellyfinUser?.Id}`,
-            userType:
-              settings.main.mediaServerType === MediaServerType.JELLYFIN
-                ? UserType.JELLYFIN
-                : UserType.EMBY,
           });
+          // Derived from the linked account rather than the media server type:
+          // Jellyfin may only be an authentication provider here, in which case
+          // mediaServerType would report the wrong flavour entirely.
+          newUser.userType = newUser.resolveUserType();
 
           await userRepository.save(newUser);
           createdUsers.push(newUser);
