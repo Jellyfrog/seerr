@@ -59,14 +59,21 @@ const libraryUpdateSchema = z.object({
 });
 
 const filteredMainSettings = (
-  user: User,
+  user: User | undefined,
   main: MainSettings
 ): Partial<MainSettings> => {
+  // Derived rather than stored, so that every consumer of the deprecated flag
+  // sees the same answer as /settings/public.
+  const settings = {
+    ...main,
+    mediaServerLogin: getSettings().mediaServerLoginEnabled,
+  };
+
   if (!user?.hasPermission(Permission.ADMIN)) {
-    return omit(main, 'apiKey');
+    return omit(settings, 'apiKey');
   }
 
-  return main;
+  return settings;
 };
 
 settingsRoutes.get('/main', (req, res, next) => {
@@ -85,7 +92,7 @@ settingsRoutes.post('/main', async (req, res) => {
   settings.main = merge(settings.main, req.body);
   await settings.save();
 
-  return res.status(200).json(settings.main);
+  return res.status(200).json(filteredMainSettings(req.user, settings.main));
 });
 
 settingsRoutes.get('/network', (req, res) => {
@@ -333,6 +340,12 @@ settingsRoutes.post('/jellyfin', async (req, res, next) => {
     Object.assign(settings.jellyfin, req.body);
     settings.jellyfin.serverId = result.Id;
     settings.jellyfin.name = result.ServerName;
+
+    // mediaServerType dictates the flavour while Jellyfin/Emby is the media
+    // backend; otherwise the value just assigned from the request stands. The
+    // getter already encodes that precedence, and normalises anything invalid.
+    settings.jellyfin.serverType = settings.jellyfinServerType;
+
     await settings.save();
   } catch (e) {
     if (e instanceof ApiError) {

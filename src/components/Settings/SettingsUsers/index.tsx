@@ -9,6 +9,7 @@ import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
+import { getJellyfinServerName } from '@app/utils/mediaServer';
 import { ArrowDownOnSquareIcon } from '@heroicons/react/24/outline';
 import { MediaServerType } from '@server/constants/server';
 import type { MainSettings } from '@server/lib/settings';
@@ -32,6 +33,8 @@ const messages = defineMessages('components.Settings.SettingsUsers', {
   mediaServerLogin: 'Enable {mediaServerName} Sign-In',
   mediaServerLoginTip:
     'Allow users to sign in using their {mediaServerName} account',
+  mediaServerLoginTipSecondary:
+    '{mediaServerName} is not the media server, so only users who have linked their {mediaServerName} account from their profile will be able to sign in.',
   atLeastOneAuth: 'At least one authentication method must be selected.',
   newPlexLogin: 'Enable New {mediaServerName} Sign-In',
   newPlexLoginTip:
@@ -43,6 +46,9 @@ const messages = defineMessages('components.Settings.SettingsUsers', {
   disabledMediaServerLoginWarning:
     'Some users may not have a {applicationTitle} password set. Disabling {mediaServerName} sign-in could lock them out. Affected users will need to set a password from their profile or via a password reset link.',
 });
+
+/** Synthetic yup path for the "at least one login method" cross-field check. */
+const AUTH_ERROR_PATH = 'loginMethods';
 
 const SettingsUsers = () => {
   const { addToast } = useToasts();
@@ -58,18 +64,23 @@ const SettingsUsers = () => {
     .object()
     .shape({
       localLogin: yup.boolean(),
-      mediaServerLogin: yup.boolean(),
+      plexLogin: yup.boolean(),
+      jellyfinLogin: yup.boolean(),
     })
     .test({
       name: 'atLeastOneAuth',
       test: function (values) {
         const isValid = (
-          ['localLogin', 'mediaServerLogin'] as (keyof typeof values)[]
+          [
+            'localLogin',
+            'plexLogin',
+            'jellyfinLogin',
+          ] as (keyof typeof values)[]
         ).some((field) => !!values[field]);
 
         if (isValid) return true;
         return this.createError({
-          path: 'localLogin | mediaServerLogin',
+          path: AUTH_ERROR_PATH,
           message: intl.formatMessage(messages.atLeastOneAuth),
         });
       },
@@ -78,6 +89,10 @@ const SettingsUsers = () => {
   if (!data && !error) {
     return <LoadingSpinner />;
   }
+
+  const jellyfinServerName = getJellyfinServerName(
+    settings.currentSettings.jellyfinServerType
+  );
 
   const mediaServerFormatValues = {
     mediaServerName:
@@ -89,6 +104,12 @@ const SettingsUsers = () => {
             ? 'Plex'
             : undefined,
   };
+
+  const plexIsPrimary =
+    settings.currentSettings.mediaServerType === MediaServerType.PLEX;
+  const jellyfinIsPrimary =
+    settings.currentSettings.mediaServerType === MediaServerType.JELLYFIN ||
+    settings.currentSettings.mediaServerType === MediaServerType.EMBY;
 
   return (
     <>
@@ -108,7 +129,8 @@ const SettingsUsers = () => {
         <Formik
           initialValues={{
             localLogin: data?.localLogin,
-            mediaServerLogin: data?.mediaServerLogin,
+            plexLogin: data?.plexLogin,
+            jellyfinLogin: data?.jellyfinLogin,
             newPlexLogin: data?.newPlexLogin,
             movieQuotaLimit: data?.defaultQuotas.movie.quotaLimit ?? 0,
             movieQuotaDays: data?.defaultQuotas.movie.quotaDays ?? 7,
@@ -122,7 +144,8 @@ const SettingsUsers = () => {
             try {
               await axios.post('/api/v1/settings/main', {
                 localLogin: values.localLogin,
-                mediaServerLogin: values.mediaServerLogin,
+                plexLogin: values.plexLogin,
+                jellyfinLogin: values.jellyfinLogin,
                 newPlexLogin: values.newPlexLogin,
                 defaultQuotas: {
                   movie: {
@@ -166,9 +189,9 @@ const SettingsUsers = () => {
                       <span className="label-tip">
                         {intl.formatMessage(messages.loginMethodsTip)}
                       </span>
-                      {'localLogin | mediaServerLogin' in errors && (
+                      {AUTH_ERROR_PATH in errors && (
                         <span className="error">
-                          {errors['localLogin | mediaServerLogin'] as string}
+                          {errors[AUTH_ERROR_PATH] as string}
                         </span>
                       )}
                     </span>
@@ -186,38 +209,54 @@ const SettingsUsers = () => {
                         }
                       />
                       <LabeledCheckbox
-                        id="mediaServerLogin"
+                        id="plexLogin"
                         className="mt-4"
-                        label={intl.formatMessage(
-                          messages.mediaServerLogin,
-                          mediaServerFormatValues
-                        )}
+                        label={intl.formatMessage(messages.mediaServerLogin, {
+                          mediaServerName: 'Plex',
+                        })}
                         description={intl.formatMessage(
-                          messages.mediaServerLoginTip,
-                          mediaServerFormatValues
+                          plexIsPrimary
+                            ? messages.mediaServerLoginTip
+                            : messages.mediaServerLoginTipSecondary,
+                          { mediaServerName: 'Plex' }
                         )}
                         onChange={() =>
-                          setFieldValue(
-                            'mediaServerLogin',
-                            !values.mediaServerLogin
-                          )
+                          setFieldValue('plexLogin', !values.plexLogin)
                         }
                       />
-                      {!values.mediaServerLogin && values.localLogin && (
-                        <div className="mt-4">
-                          <Alert
-                            title={intl.formatMessage(
-                              messages.disabledMediaServerLoginWarning,
-                              {
-                                applicationTitle:
-                                  settings.currentSettings.applicationTitle,
-                                ...mediaServerFormatValues,
-                              }
-                            )}
-                            type="warning"
-                          />
-                        </div>
-                      )}
+                      <LabeledCheckbox
+                        id="jellyfinLogin"
+                        className="mt-4"
+                        label={intl.formatMessage(messages.mediaServerLogin, {
+                          mediaServerName: jellyfinServerName,
+                        })}
+                        description={intl.formatMessage(
+                          jellyfinIsPrimary
+                            ? messages.mediaServerLoginTip
+                            : messages.mediaServerLoginTipSecondary,
+                          { mediaServerName: jellyfinServerName }
+                        )}
+                        onChange={() =>
+                          setFieldValue('jellyfinLogin', !values.jellyfinLogin)
+                        }
+                      />
+                      {((plexIsPrimary && !values.plexLogin) ||
+                        (jellyfinIsPrimary && !values.jellyfinLogin)) &&
+                        values.localLogin && (
+                          <div className="mt-4">
+                            <Alert
+                              title={intl.formatMessage(
+                                messages.disabledMediaServerLoginWarning,
+                                {
+                                  applicationTitle:
+                                    settings.currentSettings.applicationTitle,
+                                  ...mediaServerFormatValues,
+                                }
+                              )}
+                              type="warning"
+                            />
+                          </div>
+                        )}
                     </div>
                   </div>
                 </div>

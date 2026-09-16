@@ -28,6 +28,25 @@ import { canMakePermissionsChange } from '.';
 
 const userSettingsRoutes = Router({ mergeParams: true });
 
+/**
+ * Whether the user would still be able to sign in after unlinking `provider`.
+ * A local password counts, and so does an account on the other provider.
+ */
+const hasRemainingLoginMethod = (
+  user: User,
+  provider: 'plex' | 'jellyfin'
+): boolean => {
+  if (user.email && user.password) {
+    return true;
+  }
+
+  const settings = getSettings();
+
+  return provider === 'plex'
+    ? !!user.jellyfinUserId && settings.jellyfinLoginEnabled
+    : !!user.plexId && settings.plexLoginEnabled;
+};
+
 userSettingsRoutes.get<{ id: string }, UserSettingsGeneralResponse>(
   '/main',
   isOwnProfileOrAdmin(),
@@ -272,8 +291,7 @@ userSettingsRoutes.post<{ authToken: string }>(
     if (!req.user) {
       return res.status(404).json({ code: ApiErrorCode.Unauthorized });
     }
-    // Make sure Plex login is enabled
-    if (settings.main.mediaServerType !== MediaServerType.PLEX) {
+    if (!settings.plexLinkEnabled) {
       return res.status(500).json({ message: 'Plex login is disabled' });
     }
 
@@ -299,10 +317,12 @@ userSettingsRoutes.post<{ authToken: string }>(
     }
 
     // valid plex user found, link to current user
-    user.userType = UserType.PLEX;
     user.plexId = account.id;
     user.plexUsername = account.username;
     user.plexToken = account.authToken;
+    // Only the primary media server owns userType; linking Plex as a secondary
+    // provider must leave the user's existing identity alone.
+    user.userType = user.resolveUserType();
     await userRepository.save(user);
 
     return res.status(204).send();
@@ -316,9 +336,9 @@ userSettingsRoutes.delete<{ id: string }>(
     const settings = getSettings();
     const userRepository = getRepository(User);
 
-    // Make sure Plex login is enabled
-    if (settings.main.mediaServerType !== MediaServerType.PLEX) {
-      return res.status(500).json({ message: 'Plex login is disabled' });
+    // Make sure Plex is configured
+    if (!settings.plexConfigured && !settings.plexIsPrimary) {
+      return res.status(500).json({ message: 'Plex is not configured' });
     }
 
     try {
@@ -341,16 +361,16 @@ userSettingsRoutes.delete<{ id: string }>(
         });
       }
 
-      if (!user.email || !user.password) {
+      if (!hasRemainingLoginMethod(user, 'plex')) {
         return res.status(400).json({
           message: 'User does not have a local email or password set.',
         });
       }
 
-      user.userType = UserType.LOCAL;
       user.plexId = null;
       user.plexUsername = null;
       user.plexToken = null;
+      user.userType = user.resolveUserType();
       await userRepository.save(user);
 
       return res.status(204).send();
@@ -370,11 +390,7 @@ userSettingsRoutes.post<{ username: string; password: string }>(
     if (!req.user) {
       return res.status(401).json({ code: ApiErrorCode.Unauthorized });
     }
-    // Make sure jellyfin login is enabled
-    if (
-      settings.main.mediaServerType !== MediaServerType.JELLYFIN &&
-      settings.main.mediaServerType !== MediaServerType.EMBY
-    ) {
+    if (!settings.jellyfinLinkEnabled) {
       return res
         .status(500)
         .json({ message: 'Jellyfin/Emby login is disabled' });
@@ -429,14 +445,13 @@ userSettingsRoutes.post<{ username: string; password: string }>(
       const user = req.user;
 
       // valid jellyfin user found, link to current user
-      user.userType =
-        settings.main.mediaServerType === MediaServerType.EMBY
-          ? UserType.EMBY
-          : UserType.JELLYFIN;
       user.jellyfinUserId = account.User.Id;
       user.jellyfinUsername = account.User.Name;
       user.jellyfinAuthToken = account.AccessToken;
       user.jellyfinDeviceId = deviceId;
+      // Only the primary media server owns userType; linking Jellyfin as a
+      // secondary provider must leave the user's existing identity alone.
+      user.userType = user.resolveUserType();
       await userRepository.save(user);
 
       return res.status(204).send();
@@ -465,14 +480,11 @@ userSettingsRoutes.delete<{ id: string }>(
     const settings = getSettings();
     const userRepository = getRepository(User);
 
-    // Make sure jellyfin login is enabled
-    if (
-      settings.main.mediaServerType !== MediaServerType.JELLYFIN &&
-      settings.main.mediaServerType !== MediaServerType.EMBY
-    ) {
+    // Make sure jellyfin is configured
+    if (!settings.jellyfinConfigured && !settings.jellyfinIsPrimary) {
       return res
         .status(500)
-        .json({ message: 'Jellyfin/Emby login is disabled' });
+        .json({ message: 'Jellyfin/Emby is not configured' });
     }
 
     try {
@@ -495,17 +507,17 @@ userSettingsRoutes.delete<{ id: string }>(
         });
       }
 
-      if (!user.email || !user.password) {
+      if (!hasRemainingLoginMethod(user, 'jellyfin')) {
         return res.status(400).json({
           message: 'User does not have a local email or password set.',
         });
       }
 
-      user.userType = UserType.LOCAL;
       user.jellyfinUserId = null;
       user.jellyfinUsername = null;
       user.jellyfinAuthToken = null;
       user.jellyfinDeviceId = null;
+      user.userType = user.resolveUserType();
       await userRepository.save(user);
 
       return res.status(204).send();
@@ -533,16 +545,13 @@ userSettingsRoutes.post<{ secret: string }>(
 
     const { secret } = result.data;
 
-    if (
-      settings.main.mediaServerType !== MediaServerType.JELLYFIN &&
-      settings.main.mediaServerType !== MediaServerType.EMBY
-    ) {
+    if (!settings.jellyfinLinkEnabled) {
       return res
         .status(500)
         .json({ message: 'Jellyfin/Emby login is disabled' });
     }
 
-    if (settings.main.mediaServerType !== MediaServerType.JELLYFIN) {
+    if (settings.jellyfinServerType !== MediaServerType.JELLYFIN) {
       return res
         .status(403)
         .json({ message: 'Quick Connect is only supported by Jellyfin.' });
@@ -569,11 +578,11 @@ userSettingsRoutes.post<{ secret: string }>(
         user.id === 1 ? 'BOT_seerr' : `BOT_seerr_${user.username ?? ''}`
       ).toString('base64');
 
-      user.userType = UserType.JELLYFIN;
       user.jellyfinUserId = account.User.Id;
       user.jellyfinUsername = account.User.Name;
       user.jellyfinAuthToken = account.AccessToken;
       user.jellyfinDeviceId = deviceId;
+      user.userType = user.resolveUserType();
       await userRepository.save(user);
 
       return res.status(204).send();

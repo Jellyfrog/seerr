@@ -7,6 +7,7 @@ import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
+import { getJellyfinServerName } from '@app/utils/mediaServer';
 import { isValidURL } from '@app/utils/urlValidationHelper';
 import { ArrowDownOnSquareIcon } from '@heroicons/react/24/outline';
 import { ApiErrorCode } from '@server/constants/error';
@@ -42,6 +43,9 @@ const messages = defineMessages('components.Settings', {
   urlBase: 'URL Base',
   jellyfinForgotPasswordUrl: 'Forgot Password URL',
   apiKey: 'API key',
+  serverType: 'Server Type',
+  serverTypeTip:
+    'Whether this connection points at a Jellyfin or an Emby server.',
   jellyfinSyncFailedNoLibrariesFound: 'No libraries were found',
   jellyfinSyncFailedAutomaticGroupedFolders:
     'Custom authentication with Automatic Library Grouping not supported',
@@ -180,10 +184,9 @@ const SettingsJellyfin: React.FC<SettingsJellyfinProps> = ({
       } else if (e?.response?.data?.message === 'CONNECTION_ERROR') {
         addToast(
           intl.formatMessage(messages.jellyfinSyncFailedConnectionError, {
-            mediaServerName:
-              settings.currentSettings.mediaServerType === MediaServerType.EMBY
-                ? 'Emby'
-                : 'Jellyfin',
+            mediaServerName: getJellyfinServerName(
+              settings.currentSettings.jellyfinServerType
+            ),
           }),
           {
             autoDismiss: true,
@@ -245,13 +248,16 @@ const SettingsJellyfin: React.FC<SettingsJellyfinProps> = ({
   }
 
   const mediaServerFormatValues = {
-    mediaServerName:
-      settings.currentSettings.mediaServerType === MediaServerType.JELLYFIN
-        ? 'Jellyfin'
-        : settings.currentSettings.mediaServerType === MediaServerType.EMBY
-          ? 'Emby'
-          : undefined,
+    mediaServerName: getJellyfinServerName(
+      settings.currentSettings.jellyfinServerType
+    ),
   };
+
+  // The flavour is dictated by mediaServerType while Jellyfin/Emby is the media
+  // backend; it is only selectable when it acts purely as an auth provider.
+  const canChooseServerType =
+    settings.currentSettings.mediaServerType !== MediaServerType.JELLYFIN &&
+    settings.currentSettings.mediaServerType !== MediaServerType.EMBY;
 
   return (
     <>
@@ -437,6 +443,8 @@ const SettingsJellyfin: React.FC<SettingsJellyfinProps> = ({
           jellyfinExternalUrl: data?.externalHostname || '',
           jellyfinForgotPasswordUrl: data?.jellyfinForgotPasswordUrl || '',
           apiKey: data?.apiKey,
+          serverType:
+            data?.serverType ?? settings.currentSettings.jellyfinServerType,
         }}
         validationSchema={JellyfinSettingsSchema}
         onSubmit={async (values) => {
@@ -449,6 +457,7 @@ const SettingsJellyfin: React.FC<SettingsJellyfinProps> = ({
               externalHostname: values.jellyfinExternalUrl,
               jellyfinForgotPasswordUrl: values.jellyfinForgotPasswordUrl,
               apiKey: values.apiKey,
+              serverType: Number(values.serverType),
             } as JellyfinSettings);
 
             addToast(
@@ -503,6 +512,26 @@ const SettingsJellyfin: React.FC<SettingsJellyfinProps> = ({
             <form className="section" onSubmit={handleSubmit}>
               {!isSetupSettings && (
                 <>
+                  {canChooseServerType && (
+                    <div className="form-row">
+                      <label htmlFor="serverType" className="text-label">
+                        {intl.formatMessage(messages.serverType)}
+                        <span className="label-tip">
+                          {intl.formatMessage(messages.serverTypeTip)}
+                        </span>
+                      </label>
+                      <div className="form-input-area">
+                        <div className="form-input-field">
+                          <Field as="select" id="serverType" name="serverType">
+                            <option value={MediaServerType.JELLYFIN}>
+                              Jellyfin
+                            </option>
+                            <option value={MediaServerType.EMBY}>Emby</option>
+                          </Field>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   <div className="form-row">
                     <label htmlFor="hostname" className="text-label">
                       {intl.formatMessage(messages.hostname)}
