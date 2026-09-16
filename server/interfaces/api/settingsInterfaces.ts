@@ -38,8 +38,6 @@ export interface PublicSettingsResponse {
   mediaServerLogin: boolean;
   plexLogin: boolean;
   jellyfinLogin: boolean;
-  plexConfigured: boolean;
-  jellyfinConfigured: boolean;
   jellyfinServerType: MediaServerType.JELLYFIN | MediaServerType.EMBY;
   movie4kEnabled: boolean;
   series4kEnabled: boolean;

@@ -7,6 +7,7 @@ import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
+import { getJellyfinServerName } from '@app/utils/mediaServer';
 import { isValidURL } from '@app/utils/urlValidationHelper';
 import { ArrowDownOnSquareIcon } from '@heroicons/react/24/outline';
 import { ApiErrorCode } from '@server/constants/error';
@@ -183,11 +184,9 @@ const SettingsJellyfin: React.FC<SettingsJellyfinProps> = ({
       } else if (e?.response?.data?.message === 'CONNECTION_ERROR') {
         addToast(
           intl.formatMessage(messages.jellyfinSyncFailedConnectionError, {
-            mediaServerName:
-              settings.currentSettings.jellyfinServerType ===
-              MediaServerType.EMBY
-                ? 'Emby'
-                : 'Jellyfin',
+            mediaServerName: getJellyfinServerName(
+              settings.currentSettings.jellyfinServerType
+            ),
           }),
           {
             autoDismiss: true,
@@ -249,10 +248,9 @@ const SettingsJellyfin: React.FC<SettingsJellyfinProps> = ({
   }
 
   const mediaServerFormatValues = {
-    mediaServerName:
-      settings.currentSettings.jellyfinServerType === MediaServerType.EMBY
-        ? 'Emby'
-        : 'Jellyfin',
+    mediaServerName: getJellyfinServerName(
+      settings.currentSettings.jellyfinServerType
+    ),
   };
 
   // The flavour is dictated by mediaServerType while Jellyfin/Emby is the media

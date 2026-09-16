@@ -28,19 +28,6 @@ import { canMakePermissionsChange } from '.';
 
 const userSettingsRoutes = Router({ mergeParams: true });
 
-/** Whether Plex is the media backend rather than just an auth provider. */
-const plexIsPrimary = (): boolean =>
-  getSettings().main.mediaServerType === MediaServerType.PLEX;
-
-/** Whether Jellyfin/Emby is the media backend rather than just an auth provider. */
-const jellyfinIsPrimary = (): boolean => {
-  const mediaServerType = getSettings().main.mediaServerType;
-  return (
-    mediaServerType === MediaServerType.JELLYFIN ||
-    mediaServerType === MediaServerType.EMBY
-  );
-};
-
 /**
  * The user type implied by the accounts still linked to a user.
  *
@@ -49,14 +36,14 @@ const jellyfinIsPrimary = (): boolean => {
  * still attached.
  */
 const resolveUserType = (user: User): UserType => {
-  if (plexIsPrimary() && user.plexId) {
+  const settings = getSettings();
+
+  if (settings.plexIsPrimary && user.plexId) {
     return UserType.PLEX;
   }
 
-  if (jellyfinIsPrimary() && user.jellyfinUserId) {
-    return getSettings().jellyfinServerType === MediaServerType.EMBY
-      ? UserType.EMBY
-      : UserType.JELLYFIN;
+  if (settings.jellyfinIsPrimary && user.jellyfinUserId) {
+    return settings.jellyfinUserType;
   }
 
   return UserType.LOCAL;
@@ -331,7 +318,7 @@ userSettingsRoutes.post<{ authToken: string }>(
     // on plexLoginEnabled: configuring a Plex server needs the admin's Plex
     // token, and linking is the only way to obtain one, so requiring a
     // configured server here would make Plex impossible to add at all.
-    if (!plexIsPrimary() && !settings.main.plexLogin) {
+    if (!settings.plexIsPrimary && !settings.main.plexLogin) {
       return res.status(500).json({ message: 'Plex login is disabled' });
     }
 
@@ -377,7 +364,7 @@ userSettingsRoutes.delete<{ id: string }>(
     const userRepository = getRepository(User);
 
     // Make sure Plex is configured
-    if (!settings.plexConfigured && !plexIsPrimary()) {
+    if (!settings.plexConfigured && !settings.plexIsPrimary) {
       return res.status(500).json({ message: 'Plex is not configured' });
     }
 
@@ -432,7 +419,7 @@ userSettingsRoutes.post<{ username: string; password: string }>(
     }
     // As with Plex, linking stays available on the primary media server even
     // when the sign-in switch is off.
-    if (!jellyfinIsPrimary() && !settings.jellyfinLoginEnabled) {
+    if (!settings.jellyfinIsPrimary && !settings.jellyfinLoginEnabled) {
       return res
         .status(500)
         .json({ message: 'Jellyfin/Emby login is disabled' });
@@ -523,7 +510,7 @@ userSettingsRoutes.delete<{ id: string }>(
     const userRepository = getRepository(User);
 
     // Make sure jellyfin is configured
-    if (!settings.jellyfinConfigured && !jellyfinIsPrimary()) {
+    if (!settings.jellyfinConfigured && !settings.jellyfinIsPrimary) {
       return res
         .status(500)
         .json({ message: 'Jellyfin/Emby is not configured' });
@@ -587,7 +574,7 @@ userSettingsRoutes.post<{ secret: string }>(
 
     const { secret } = result.data;
 
-    if (!jellyfinIsPrimary() && !settings.jellyfinLoginEnabled) {
+    if (!settings.jellyfinIsPrimary && !settings.jellyfinLoginEnabled) {
       return res
         .status(500)
         .json({ message: 'Jellyfin/Emby login is disabled' });

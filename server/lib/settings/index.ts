@@ -1,4 +1,5 @@
-import { MediaServerType } from '@server/constants/server';
+import { MediaServerType, ServerType } from '@server/constants/server';
+import { UserType } from '@server/constants/user';
 import { Permission } from '@server/lib/permissions';
 import { runMigrations } from '@server/lib/settings/migrator';
 import type { AvailableLocale } from '@server/types/languages';
@@ -215,8 +216,6 @@ interface FullPublicSettings extends PublicSettings {
   mediaServerLogin: boolean;
   plexLogin: boolean;
   jellyfinLogin: boolean;
-  plexConfigured: boolean;
-  jellyfinConfigured: boolean;
   jellyfinServerType: MediaServerType.JELLYFIN | MediaServerType.EMBY;
   movie4kEnabled: boolean;
   series4kEnabled: boolean;
@@ -733,6 +732,19 @@ class Settings {
     this.data.public = mergeSettings(this.data.public, data);
   }
 
+  /** Whether Plex is the media backend rather than only an auth provider. */
+  get plexIsPrimary(): boolean {
+    return this.data.main.mediaServerType === MediaServerType.PLEX;
+  }
+
+  /** Whether Jellyfin/Emby is the media backend rather than only an auth provider. */
+  get jellyfinIsPrimary(): boolean {
+    return (
+      this.data.main.mediaServerType === MediaServerType.JELLYFIN ||
+      this.data.main.mediaServerType === MediaServerType.EMBY
+    );
+  }
+
   /** Whether a Plex server connection has been set up. */
   get plexConfigured(): boolean {
     return !!this.data.plex.machineId || !!this.data.plex.ip;
@@ -745,24 +757,35 @@ class Settings {
 
   /**
    * Whether the configured Jellyfin connection is a Jellyfin or an Emby server.
-   * Falls back to `main.mediaServerType` for settings files written before the
-   * flavour was recorded on the connection itself.
    */
   get jellyfinServerType(): MediaServerType.JELLYFIN | MediaServerType.EMBY {
     // While Jellyfin/Emby is the media backend, mediaServerType is the
     // authoritative answer; deferring to the connection here would let the two
     // drift apart. The connection only decides when Jellyfin/Emby is nothing
     // more than an authentication provider.
-    if (
-      this.data.main.mediaServerType === MediaServerType.JELLYFIN ||
-      this.data.main.mediaServerType === MediaServerType.EMBY
-    ) {
-      return this.data.main.mediaServerType;
+    if (this.jellyfinIsPrimary) {
+      return this.data.main.mediaServerType as
+        | MediaServerType.JELLYFIN
+        | MediaServerType.EMBY;
     }
 
     return this.data.jellyfin.serverType === MediaServerType.EMBY
       ? MediaServerType.EMBY
       : MediaServerType.JELLYFIN;
+  }
+
+  /** The display name of the configured Jellyfin/Emby connection. */
+  get jellyfinServerName(): ServerType {
+    return this.jellyfinServerType === MediaServerType.EMBY
+      ? ServerType.EMBY
+      : ServerType.JELLYFIN;
+  }
+
+  /** The user type that an account on the configured Jellyfin/Emby server gets. */
+  get jellyfinUserType(): UserType.JELLYFIN | UserType.EMBY {
+    return this.jellyfinServerType === MediaServerType.EMBY
+      ? UserType.EMBY
+      : UserType.JELLYFIN;
   }
 
   /**
@@ -773,9 +796,7 @@ class Settings {
    */
   get plexLoginEnabled(): boolean {
     return (
-      this.data.main.plexLogin &&
-      (this.plexConfigured ||
-        this.data.main.mediaServerType === MediaServerType.PLEX)
+      this.data.main.plexLogin && (this.plexConfigured || this.plexIsPrimary)
     );
   }
 
@@ -783,10 +804,17 @@ class Settings {
   get jellyfinLoginEnabled(): boolean {
     return (
       this.data.main.jellyfinLogin &&
-      (this.jellyfinConfigured ||
-        this.data.main.mediaServerType === MediaServerType.JELLYFIN ||
-        this.data.main.mediaServerType === MediaServerType.EMBY)
+      (this.jellyfinConfigured || this.jellyfinIsPrimary)
     );
+  }
+
+  /**
+   * The deprecated single media-server sign-in switch, derived from the two
+   * per-provider ones. Never persisted — deriving it on read is what keeps
+   * every consumer seeing the same answer.
+   */
+  get mediaServerLoginEnabled(): boolean {
+    return this.plexLoginEnabled || this.jellyfinLoginEnabled;
   }
 
   get fullPublicSettings(): FullPublicSettings {
@@ -798,11 +826,9 @@ class Settings {
       hideBlocklisted: this.data.main.hideBlocklisted,
       hideRequested: this.data.main.hideRequested,
       localLogin: this.data.main.localLogin,
-      mediaServerLogin: this.plexLoginEnabled || this.jellyfinLoginEnabled,
+      mediaServerLogin: this.mediaServerLoginEnabled,
       plexLogin: this.plexLoginEnabled,
       jellyfinLogin: this.jellyfinLoginEnabled,
-      plexConfigured: this.plexConfigured,
-      jellyfinConfigured: this.jellyfinConfigured,
       jellyfinServerType: this.jellyfinServerType,
       jellyfinExternalHost: this.data.jellyfin.externalHostname,
       jellyfinForgotPasswordUrl: this.data.jellyfin.jellyfinForgotPasswordUrl,

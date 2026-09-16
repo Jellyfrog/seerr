@@ -10,6 +10,7 @@ import PlexLoginButton from '@app/components/Login/PlexLoginButton';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
+import { getJellyfinServerName } from '@app/utils/mediaServer';
 import { Transition } from '@headlessui/react';
 import { XCircleIcon } from '@heroicons/react/24/solid';
 import { MediaServerType } from '@server/constants/server';
@@ -87,10 +88,9 @@ const Login = () => {
     revalidateOnFocus: false,
   });
 
-  const jellyfinServerName =
-    settings.currentSettings.jellyfinServerType === MediaServerType.EMBY
-      ? 'Emby'
-      : 'Jellyfin';
+  const jellyfinServerName = getJellyfinServerName(
+    settings.currentSettings.jellyfinServerType
+  );
 
   const JellyfinServerLogo =
     settings.currentSettings.jellyfinServerType === MediaServerType.EMBY

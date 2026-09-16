@@ -1,7 +1,7 @@
 import JellyfinAPI from '@server/api/jellyfin';
 import PlexTvAPI from '@server/api/plextv';
 import { ApiErrorCode } from '@server/constants/error';
-import { MediaServerType, ServerType } from '@server/constants/server';
+import { MediaServerType } from '@server/constants/server';
 import { UserType } from '@server/constants/user';
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
@@ -76,8 +76,7 @@ authRoutes.post('/plex', async (req, res, next) => {
 
   // Plex can be configured purely as an authentication provider, with some
   // other server acting as the media backend.
-  const plexIsPrimary =
-    isInitialSetup || settings.main.mediaServerType === MediaServerType.PLEX;
+  const plexIsPrimary = isInitialSetup || settings.plexIsPrimary;
 
   try {
     // First we need to use this auth token to get the user's email from plex.tv
@@ -300,15 +299,8 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
 
   // Jellyfin/Emby can be configured purely as an authentication provider, with
   // some other server acting as the media backend.
-  const jellyfinIsPrimary =
-    isInitialSetup ||
-    settings.main.mediaServerType === MediaServerType.JELLYFIN ||
-    settings.main.mediaServerType === MediaServerType.EMBY;
-
-  const jellyfinServerName =
-    settings.jellyfinServerType === MediaServerType.JELLYFIN
-      ? ServerType.JELLYFIN
-      : ServerType.EMBY;
+  const jellyfinIsPrimary = isInitialSetup || settings.jellyfinIsPrimary;
+  const jellyfinServerName = settings.jellyfinServerName;
 
   if (!body.username) {
     return res.status(500).json({ error: 'You must provide an username' });
@@ -542,10 +534,7 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
         jellyfinUserId: account.User.Id,
         jellyfinDeviceId: deviceId,
         permissions: settings.main.defaultPermissions,
-        userType:
-          settings.jellyfinServerType === MediaServerType.JELLYFIN
-            ? UserType.JELLYFIN
-            : UserType.EMBY,
+        userType: settings.jellyfinUserType,
       });
       user.avatar = getUserAvatarUrl(user);
 
@@ -799,9 +788,7 @@ authRoutes.post(
 
     // Jellyfin may only be an authentication provider here, in which case it
     // cannot vouch for accounts that have never been linked.
-    const jellyfinIsPrimary =
-      settings.main.mediaServerType === MediaServerType.JELLYFIN ||
-      settings.main.mediaServerType === MediaServerType.EMBY;
+    const jellyfinIsPrimary = settings.jellyfinIsPrimary;
 
     try {
       const hostname = getHostname();

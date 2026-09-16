@@ -5,7 +5,10 @@ import ServiceWorkerSetup from '@app/components/ServiceWorkerSetup';
 import StatusChecker from '@app/components/StatusChecker';
 import { InteractionProvider } from '@app/context/InteractionContext';
 import { LanguageContext } from '@app/context/LanguageContext';
-import { SettingsProvider } from '@app/context/SettingsContext';
+import {
+  defaultSettings,
+  SettingsProvider,
+} from '@app/context/SettingsContext';
 import { UserContext } from '@app/context/UserContext';
 import type { User } from '@app/hooks/useUser';
 import { Permission, useUser } from '@app/hooks/useUser';
@@ -13,7 +16,6 @@ import '@app/styles/globals.css';
 import { polyfillIntl } from '@app/utils/polyfillIntl';
 import { getHostAndPort } from '@app/utils/urlHelper';
 import '@fontsource-variable/inter';
-import { MediaServerType } from '@server/constants/server';
 import type { PublicSettingsResponse } from '@server/interfaces/api/settingsInterfaces';
 import type { AvailableLocale } from '@server/types/languages';
 import axios from 'axios';
@@ -238,37 +240,12 @@ const CoreApp: Omit<NextAppComponentType, 'origGetInitialProps'> = ({
 CoreApp.getInitialProps = async (initialProps) => {
   const { ctx, router } = initialProps;
   let user: User | undefined = undefined;
+  // Same defaults as the client context, minus the title, which is blank until
+  // the real settings load. Duplicating the object here means every new public
+  // setting has to be added in two places.
   let currentSettings: PublicSettingsResponse = {
-    initialized: false,
+    ...defaultSettings,
     applicationTitle: '',
-    applicationUrl: '',
-    hideAvailable: false,
-    hideBlocklisted: false,
-    hideRequested: false,
-    movie4kEnabled: false,
-    series4kEnabled: false,
-    localLogin: true,
-    mediaServerLogin: true,
-    plexLogin: false,
-    jellyfinLogin: false,
-    plexConfigured: false,
-    jellyfinConfigured: false,
-    jellyfinServerType: MediaServerType.JELLYFIN,
-    discoverRegion: '',
-    streamingRegion: '',
-    originalLanguage: '',
-    mediaServerType: MediaServerType.NOT_CONFIGURED,
-    partialRequestsEnabled: true,
-    enableSpecialEpisodes: false,
-    cacheImages: false,
-    vapidPublic: '',
-    enablePushRegistration: false,
-    locale: 'en',
-    emailEnabled: false,
-    newPlexLogin: true,
-    youtubeUrl: '',
-    versionCheck: true,
-    plexClientIdentifier: '',
   };
 
   if (ctx.res) {
