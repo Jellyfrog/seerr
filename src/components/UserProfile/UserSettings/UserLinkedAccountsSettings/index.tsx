@@ -177,10 +177,19 @@ const UserLinkedAccountsSettings = () => {
     );
   }
 
-  // Unlinking must leave the user with a way back in: either a local password
-  // or the other linked media server account.
+  // Unlinking must leave the user with a way back in: either a local password,
+  // or the other linked account on a provider whose sign-in is still enabled.
+  // This mirrors hasRemainingLoginMethod() on the server — offering an unlink
+  // the server then rejects is worse than not offering it.
+  const otherProviderUsable =
+    (settings.currentSettings.plexLogin &&
+      accounts.some((a) => a.type === LinkedAccountType.Plex)) ||
+    (settings.currentSettings.jellyfinLogin &&
+      accounts.some((a) => a.type !== LinkedAccountType.Plex));
+
   const enableMediaServerUnlink =
-    user?.id !== 1 && (passwordInfo?.hasPassword || accounts.length > 1);
+    user?.id !== 1 &&
+    (passwordInfo?.hasPassword || (accounts.length > 1 && otherProviderUsable));
 
   return (
     <>

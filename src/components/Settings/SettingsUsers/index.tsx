@@ -9,6 +9,7 @@ import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
+import { getJellyfinServerName } from '@app/utils/mediaServer';
 import { ArrowDownOnSquareIcon } from '@heroicons/react/24/outline';
 import { MediaServerType } from '@server/constants/server';
 import type { MainSettings } from '@server/lib/settings';
@@ -32,13 +33,8 @@ const messages = defineMessages('components.Settings.SettingsUsers', {
   mediaServerLogin: 'Enable {mediaServerName} Sign-In',
   mediaServerLoginTip:
     'Allow users to sign in using their {mediaServerName} account',
-  plexLogin: 'Enable Plex Sign-In',
-  plexLoginTip: 'Allow users to sign in using their Plex account',
-  jellyfinLogin: 'Enable {jellyfinServerName} Sign-In',
-  jellyfinLoginTip:
-    'Allow users to sign in using their {jellyfinServerName} account',
-  secondaryProviderTip:
-    '{serverName} is not the media server, so only users who have linked their {serverName} account from their profile will be able to sign in.',
+  mediaServerLoginTipSecondary:
+    '{mediaServerName} is not the media server, so only users who have linked their {mediaServerName} account from their profile will be able to sign in.',
   atLeastOneAuth: 'At least one authentication method must be selected.',
   newPlexLogin: 'Enable New {mediaServerName} Sign-In',
   newPlexLoginTip:
@@ -50,6 +46,9 @@ const messages = defineMessages('components.Settings.SettingsUsers', {
   disabledMediaServerLoginWarning:
     'Some users may not have a {applicationTitle} password set. Disabling {mediaServerName} sign-in could lock them out. Affected users will need to set a password from their profile or via a password reset link.',
 });
+
+/** Synthetic yup path for the "at least one login method" cross-field check. */
+const AUTH_ERROR_PATH = 'loginMethods';
 
 const SettingsUsers = () => {
   const { addToast } = useToasts();
@@ -81,7 +80,7 @@ const SettingsUsers = () => {
 
         if (isValid) return true;
         return this.createError({
-          path: 'localLogin | mediaServerLogin',
+          path: AUTH_ERROR_PATH,
           message: intl.formatMessage(messages.atLeastOneAuth),
         });
       },
@@ -91,10 +90,9 @@ const SettingsUsers = () => {
     return <LoadingSpinner />;
   }
 
-  const jellyfinServerName =
-    settings.currentSettings.jellyfinServerType === MediaServerType.EMBY
-      ? 'Emby'
-      : 'Jellyfin';
+  const jellyfinServerName = getJellyfinServerName(
+    settings.currentSettings.jellyfinServerType
+  );
 
   const mediaServerFormatValues = {
     mediaServerName:
@@ -191,9 +189,9 @@ const SettingsUsers = () => {
                       <span className="label-tip">
                         {intl.formatMessage(messages.loginMethodsTip)}
                       </span>
-                      {'localLogin | mediaServerLogin' in errors && (
+                      {AUTH_ERROR_PATH in errors && (
                         <span className="error">
-                          {errors['localLogin | mediaServerLogin'] as string}
+                          {errors[AUTH_ERROR_PATH] as string}
                         </span>
                       )}
                     </span>
@@ -213,17 +211,15 @@ const SettingsUsers = () => {
                       <LabeledCheckbox
                         id="plexLogin"
                         className="mt-4"
-                        label={intl.formatMessage(messages.plexLogin)}
-                        description={
+                        label={intl.formatMessage(messages.mediaServerLogin, {
+                          mediaServerName: 'Plex',
+                        })}
+                        description={intl.formatMessage(
                           plexIsPrimary
-                            ? intl.formatMessage(messages.plexLoginTip)
-                            : `${intl.formatMessage(
-                                messages.plexLoginTip
-                              )} — ${intl.formatMessage(
-                                messages.secondaryProviderTip,
-                                { serverName: 'Plex' }
-                              )}`
-                        }
+                            ? messages.mediaServerLoginTip
+                            : messages.mediaServerLoginTipSecondary,
+                          { mediaServerName: 'Plex' }
+                        )}
                         onChange={() =>
                           setFieldValue('plexLogin', !values.plexLogin)
                         }
@@ -231,21 +227,15 @@ const SettingsUsers = () => {
                       <LabeledCheckbox
                         id="jellyfinLogin"
                         className="mt-4"
-                        label={intl.formatMessage(messages.jellyfinLogin, {
-                          jellyfinServerName,
+                        label={intl.formatMessage(messages.mediaServerLogin, {
+                          mediaServerName: jellyfinServerName,
                         })}
-                        description={
+                        description={intl.formatMessage(
                           jellyfinIsPrimary
-                            ? intl.formatMessage(messages.jellyfinLoginTip, {
-                                jellyfinServerName,
-                              })
-                            : `${intl.formatMessage(messages.jellyfinLoginTip, {
-                                jellyfinServerName,
-                              })} — ${intl.formatMessage(
-                                messages.secondaryProviderTip,
-                                { serverName: jellyfinServerName }
-                              )}`
-                        }
+                            ? messages.mediaServerLoginTip
+                            : messages.mediaServerLoginTipSecondary,
+                          { mediaServerName: jellyfinServerName }
+                        )}
                         onChange={() =>
                           setFieldValue('jellyfinLogin', !values.jellyfinLogin)
                         }

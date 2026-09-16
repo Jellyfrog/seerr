@@ -4,6 +4,7 @@ import Modal from '@app/components/Common/Modal';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
+import { getJellyfinServerName } from '@app/utils/mediaServer';
 import { Transition } from '@headlessui/react';
 import { QrCodeIcon } from '@heroicons/react/24/outline';
 import { MediaServerType } from '@server/constants/server';
@@ -61,10 +62,9 @@ const LinkJellyfinModal = ({
   });
 
   const applicationName = settings.currentSettings.applicationTitle;
-  const mediaServerName =
-    settings.currentSettings.jellyfinServerType === MediaServerType.EMBY
-      ? 'Emby'
-      : 'Jellyfin';
+  const mediaServerName = getJellyfinServerName(
+    settings.currentSettings.jellyfinServerType
+  );
 
   return (
     <Transition
