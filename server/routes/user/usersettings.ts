@@ -291,13 +291,7 @@ userSettingsRoutes.post<{ authToken: string }>(
     if (!req.user) {
       return res.status(404).json({ code: ApiErrorCode.Unauthorized });
     }
-    // Linking has always been allowed on the primary media server regardless of
-    // the sign-in switch, since a Plex token is also what drives watchlist sync.
-    // For Plex as a secondary provider, gate on the admin's intent rather than
-    // on plexLoginEnabled: configuring a Plex server needs the admin's Plex
-    // token, and linking is the only way to obtain one, so requiring a
-    // configured server here would make Plex impossible to add at all.
-    if (!settings.plexIsPrimary && !settings.main.plexLogin) {
+    if (!settings.plexLinkEnabled) {
       return res.status(500).json({ message: 'Plex login is disabled' });
     }
 
@@ -396,9 +390,7 @@ userSettingsRoutes.post<{ username: string; password: string }>(
     if (!req.user) {
       return res.status(401).json({ code: ApiErrorCode.Unauthorized });
     }
-    // As with Plex, linking stays available on the primary media server even
-    // when the sign-in switch is off.
-    if (!settings.jellyfinIsPrimary && !settings.jellyfinLoginEnabled) {
+    if (!settings.jellyfinLinkEnabled) {
       return res
         .status(500)
         .json({ message: 'Jellyfin/Emby login is disabled' });
@@ -553,7 +545,7 @@ userSettingsRoutes.post<{ secret: string }>(
 
     const { secret } = result.data;
 
-    if (!settings.jellyfinIsPrimary && !settings.jellyfinLoginEnabled) {
+    if (!settings.jellyfinLinkEnabled) {
       return res
         .status(500)
         .json({ message: 'Jellyfin/Emby login is disabled' });

@@ -224,6 +224,31 @@ describe('POST /auth/plex with Plex as a secondary provider', () => {
     assert.strictEqual(res.status, 403);
   });
 
+  it('rejects a Plex.tv account with no id instead of matching the admin', async () => {
+    // An undefined value in a TypeORM `where` is ignored, so a lookup keyed on
+    // a missing account id would match the first user row and hand out the
+    // admin's session.
+    getPlexUserMock.mock.mockImplementationOnce(async () => ({
+      ...PLEX_ACCOUNT,
+      id: undefined as unknown as number,
+    }));
+
+    const res = await request(app)
+      .post('/auth/plex')
+      .send({ authToken: PLEX_ACCOUNT.authToken });
+
+    assert.strictEqual(res.status, 500);
+    assert.ok(!('id' in res.body));
+
+    // The admin's Plex credentials must be untouched.
+    const admin = await getRepository(User)
+      .createQueryBuilder('user')
+      .addSelect('user.plexToken')
+      .where('user.id = :id', { id: 1 })
+      .getOneOrFail();
+    assert.notStrictEqual(admin.plexToken, PLEX_ACCOUNT.authToken);
+  });
+
   it('refuses Plex sign-in when the provider is disabled', async () => {
     getSettings().main.plexLogin = false;
 
