@@ -83,9 +83,10 @@ authRoutes.post('/plex', async (req, res, next) => {
     const plextv = new PlexTvAPI(body.authToken);
     const account = await plextv.getUser();
 
-    // Guard before any lookup keyed on the account id: TypeORM ignores an
-    // undefined value in a `where`, so `{ plexId: undefined }` would match the
-    // first user row -- the admin -- and hand out their session.
+    // An account we cannot identify must not authenticate: every lookup below
+    // is keyed on the id, and a sign-in that matched on anything else would be
+    // matching the wrong person. Guard here rather than inside one branch, so
+    // that it covers the secondary-provider path too.
     if (!account.id) {
       logger.error('Plex ID was missing from Plex.tv response', {
         label: 'API',
@@ -105,9 +106,10 @@ authRoutes.post('/plex', async (req, res, next) => {
       // never seen: matching an unknown Plex account to an existing Seerr user
       // would mean guessing on email, which is unique and owned by the primary
       // provider. Require the account to have been linked first.
-      const linkedUser = await userRepository.findOne({
-        where: { plexId: account.id },
-      });
+      const linkedUser = await userRepository
+        .createQueryBuilder('user')
+        .where('user.plexId = :id', { id: account.id })
+        .getOne();
 
       if (!linkedUser) {
         logger.warn(
