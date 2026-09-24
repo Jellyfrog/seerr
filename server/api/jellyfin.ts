@@ -155,8 +155,11 @@ class JellyfinAPI extends ExternalAPI {
         ? deviceId
         : Buffer.from('BOT_seerr').toString('base64');
 
+    // Emby identifies a device by its version too, so it gets a fixed one.
+    // Read the connection's flavour rather than mediaServerType: this client
+    // also talks to Jellyfin/Emby when it is only an authentication provider.
     const version =
-      settings.main.mediaServerType === MediaServerType.EMBY
+      settings.jellyfinServerType === MediaServerType.EMBY
         ? '1.0.0'
         : getAppVersion();
 
@@ -177,7 +180,7 @@ class JellyfinAPI extends ExternalAPI {
       }
     );
 
-    this.mediaServerType = settings.main.mediaServerType;
+    this.mediaServerType = settings.jellyfinServerType;
   }
 
   public async login(

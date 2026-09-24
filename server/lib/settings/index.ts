@@ -761,20 +761,6 @@ class Settings {
   }
 
   /**
-   * Whether Plex can be used at all: either a connection is set up, or Plex is
-   * the media backend, in which case sign-in keeps working during setup before
-   * a server has been picked.
-   */
-  get plexAvailable(): boolean {
-    return this.plexConfigured || this.plexIsPrimary;
-  }
-
-  /** Whether Jellyfin/Emby can be used at all; see `plexAvailable`. */
-  get jellyfinAvailable(): boolean {
-    return this.jellyfinConfigured || this.jellyfinIsPrimary;
-  }
-
-  /**
    * Whether the configured Jellyfin connection is a Jellyfin or an Emby server.
    */
   get jellyfinServerType(): MediaServerType.JELLYFIN | MediaServerType.EMBY {
@@ -807,12 +793,47 @@ class Settings {
 
   /** Whether users may sign in with Plex. */
   get plexLoginEnabled(): boolean {
-    return this.data.main.plexLogin && this.plexAvailable;
+    return this.plexLoginEnabledFor(this.data.main);
   }
 
   /** Whether users may sign in with Jellyfin/Emby. */
   get jellyfinLoginEnabled(): boolean {
-    return this.data.main.jellyfinLogin && this.jellyfinAvailable;
+    return this.jellyfinLoginEnabledFor(this.data.main);
+  }
+
+  /**
+   * Whether `main` would still leave a way to sign in: local sign-in, or a
+   * provider that is both switched on and usable. A provider flag alone is not
+   * enough, since a provider without a connection cannot be signed in with.
+   * Mid-setup, sign-in stays open regardless.
+   */
+  public allowsSignIn(main: MainSettings): boolean {
+    return (
+      main.mediaServerType === MediaServerType.NOT_CONFIGURED ||
+      main.localLogin ||
+      this.plexLoginEnabledFor(main) ||
+      this.jellyfinLoginEnabledFor(main)
+    );
+  }
+
+  /**
+   * Whether Plex sign-in is switched on and usable under `main`: a connection
+   * is set up, or Plex is the media backend, in which case sign-in keeps
+   * working during setup before a server has been picked.
+   */
+  private plexLoginEnabledFor(main: MainSettings): boolean {
+    return (
+      main.plexLogin &&
+      (this.plexConfigured || isPlexPrimary(main.mediaServerType))
+    );
+  }
+
+  /** Whether Jellyfin/Emby sign-in is switched on and usable; see Plex's. */
+  private jellyfinLoginEnabledFor(main: MainSettings): boolean {
+    return (
+      main.jellyfinLogin &&
+      (this.jellyfinConfigured || isJellyfinPrimary(main.mediaServerType))
+    );
   }
 
   /** Whether users may sign in with Jellyfin Quick Connect (Emby lacks it). */
@@ -820,6 +841,19 @@ class Settings {
     return (
       this.jellyfinServerType === MediaServerType.JELLYFIN &&
       this.jellyfinLoginEnabled
+    );
+  }
+
+  /**
+   * Whether Quick Connect codes may be requested at all. Linking an account
+   * from a profile goes through the same initiate/check flow as signing in,
+   * and linking stays open on the primary server even while Jellyfin sign-in
+   * is switched off.
+   */
+  get jellyfinQuickConnectAvailable(): boolean {
+    return (
+      this.jellyfinServerType === MediaServerType.JELLYFIN &&
+      this.jellyfinLinkEnabled
     );
   }
 

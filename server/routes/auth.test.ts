@@ -209,6 +209,7 @@ function configureJellyfin() {
   const settings = getSettings();
   settings.main.mediaServerType = MediaServerType.JELLYFIN;
   settings.main.newPlexLogin = true;
+  settings.main.jellyfinLogin = true;
   settings.jellyfin.ip = 'localhost';
   settings.jellyfin.port = 8096;
   settings.jellyfin.useSsl = false;
@@ -258,6 +259,17 @@ describe('POST /auth/jellyfin/quickconnect/initiate', () => {
 
     assert.strictEqual(res.status, 403);
     assert.strictEqual(initiateQCMock.mock.callCount(), 0);
+  });
+
+  it('stays available for linking while Jellyfin sign-in is off', async () => {
+    // Profile linking uses this same flow, and linking stays open on the media
+    // server even with Jellyfin sign-in switched off.
+    getSettings().main.jellyfinLogin = false;
+
+    const res = await request(app).post('/auth/jellyfin/quickconnect/initiate');
+
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(initiateQCMock.mock.callCount(), 1);
   });
 
   it('returns 500 when Jellyfin API fails', async () => {
@@ -558,6 +570,17 @@ describe('POST /auth/jellyfin/quickconnect/authenticate', () => {
 
   it('returns 403 when the media server is Emby', async () => {
     getSettings().main.mediaServerType = MediaServerType.EMBY;
+
+    const res = await request(app)
+      .post('/auth/jellyfin/quickconnect/authenticate')
+      .send({ secret: 'abc123def456abc123def456' });
+
+    assert.strictEqual(res.status, 403);
+    assert.strictEqual(authenticateQCMock.mock.callCount(), 0);
+  });
+
+  it('returns 403 when Jellyfin sign-in is disabled', async () => {
+    getSettings().main.jellyfinLogin = false;
 
     const res = await request(app)
       .post('/auth/jellyfin/quickconnect/authenticate')
@@ -1203,5 +1226,33 @@ describe('media server sign-in when both providers are enabled', () => {
     // primary identity.
     const saved = await userRepo.findOneOrFail({ where: { id: dual.id } });
     assert.strictEqual(saved.userType, UserType.PLEX);
+  });
+
+  it('does not graft a Plex account onto a Jellyfin user by email alone', async () => {
+    const userRepo = getRepository(User);
+    const jellyfinOnly = await userRepo.save(
+      new User({
+        // Users can set their own email, so a match proves nothing about Plex.
+        email: PLEX_ACCOUNT.email,
+        jellyfinUserId: 'jf-dual-user-004',
+        jellyfinUsername: 'someoneelse',
+        permissions: 0,
+        avatar: '',
+        userType: UserType.JELLYFIN,
+      })
+    );
+
+    const res = await request(app)
+      .post('/auth/plex')
+      .send({ authToken: PLEX_ACCOUNT.authToken });
+
+    assert.strictEqual(res.status, 403);
+    assert.ok(!('id' in res.body));
+
+    const saved = await userRepo.findOneOrFail({
+      where: { id: jellyfinOnly.id },
+    });
+    assert.strictEqual(saved.plexId, null);
+    assert.strictEqual(saved.userType, UserType.JELLYFIN);
   });
 });

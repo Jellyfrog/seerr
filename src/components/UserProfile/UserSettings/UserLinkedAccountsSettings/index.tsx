@@ -84,7 +84,7 @@ const UserLinkedAccountsSettings = () => {
   const accounts: LinkedAccount[] = useMemo(() => {
     const accounts: LinkedAccount[] = [];
     if (!user) return accounts;
-    if (user.plexUsername)
+    if (user.plexUsername && hasPlexAccount(user))
       accounts.push({
         type: LinkedAccountType.Plex,
         username: user.plexUsername,
@@ -231,9 +231,12 @@ const UserLinkedAccountsSettings = () => {
       {error && <Alert title={error} type="error" />}
       {accounts.length ? (
         <ul className="space-y-4">
-          {accounts.map((acct, i) => (
+          {accounts.map((acct) => (
+            // Keyed by account, not position: after an unlink the next row
+            // would otherwise inherit the armed ConfirmButton and delete on a
+            // single click.
             <li
-              key={i}
+              key={acct.type}
               className="flex items-center gap-4 overflow-hidden rounded-lg bg-gray-800/50 px-4 py-5 shadow ring-1 ring-gray-700 sm:p-6"
             >
               <div className="w-12">

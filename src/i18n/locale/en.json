@@ -1265,6 +1265,7 @@
   "components.Settings.overrideRules": "Override Rules",
   "components.Settings.overrideRulesDescription": "Override rules allow you to specify properties that will be replaced if a request matches the rule.",
   "components.Settings.plex": "Plex",
+  "components.Settings.plexSignInOnly": "{mediaServerName} is the media server, and only one server can fill that role. Plex is used for sign-in only, so its libraries are not scanned and do not affect availability.",
   "components.Settings.plexlibraries": "Plex Libraries",
   "components.Settings.plexlibrariesDescription": "The libraries Seerr scans for titles. Set up and save your Plex connection settings, then click the button below if no libraries are listed.",
   "components.Settings.plexsettings": "Plex Settings",

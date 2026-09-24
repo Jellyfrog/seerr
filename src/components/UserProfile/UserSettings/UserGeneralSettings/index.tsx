@@ -13,7 +13,7 @@ import { Permission, UserType, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
-import { hasPlexAccount } from '@app/utils/mediaServer';
+import { hasPlexAccount, isPlexPrimary } from '@app/utils/mediaServer';
 import { ArrowDownOnSquareIcon } from '@heroicons/react/24/outline';
 import { ApiErrorCode } from '@server/constants/error';
 import type { UserSettingsGeneralResponse } from '@server/interfaces/api/userSettingsInterfaces';
@@ -320,7 +320,12 @@ const UserGeneralSettings = () => {
                       name="email"
                       type="text"
                       placeholder="example@domain.com"
-                      disabled={user?.plexUsername}
+                      // Plex rewrites the email on sign-in only when it is the
+                      // media server; the server applies the same rule.
+                      disabled={
+                        hasPlexAccount(user) &&
+                        isPlexPrimary(currentSettings.mediaServerType)
+                      }
                       className={
                         user?.warnings.find((w) => w === 'userEmailRequired')
                           ? 'border-2 border-red-400 focus:border-blue-600'
@@ -508,7 +513,9 @@ const UserGeneralSettings = () => {
                 [Permission.AUTO_REQUEST, Permission.AUTO_REQUEST_MOVIE],
                 { type: 'or' }
               ) &&
-                hasPlexAccount(user) && (
+                // Watchlist sync only runs with Plex as the media server.
+                hasPlexAccount(user) &&
+                isPlexPrimary(currentSettings.mediaServerType) && (
                   <div className="form-row">
                     <label
                       htmlFor="watchlistSyncMovies"
@@ -556,7 +563,9 @@ const UserGeneralSettings = () => {
                 [Permission.AUTO_REQUEST, Permission.AUTO_REQUEST_TV],
                 { type: 'or' }
               ) &&
-                hasPlexAccount(user) && (
+                // Watchlist sync only runs with Plex as the media server.
+                hasPlexAccount(user) &&
+                isPlexPrimary(currentSettings.mediaServerType) && (
                   <div className="form-row">
                     <label htmlFor="watchlistSyncTv" className="checkbox-label">
                       <span>

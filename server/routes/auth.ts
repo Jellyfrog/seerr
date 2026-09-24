@@ -140,14 +140,45 @@ authRoutes.post('/plex', async (req, res, next) => {
       return res.status(200).json(linkedUser.filter());
     }
 
-    // Next let's see if the user already exists
-    let user = await userRepository
+    // Next let's see if the user already exists. Prefer the account's own
+    // link; the email is only a fallback for adopting a local-only user.
+    const matches = await userRepository
       .createQueryBuilder('user')
       .where('user.plexId = :id', { id: account.id })
       .orWhere('user.email = :email', {
         email: account.email.toLowerCase(),
       })
-      .getOne();
+      .getMany();
+    let user =
+      matches.find((match) => match.plexId === account.id) ??
+      matches[0] ??
+      null;
+
+    // A matching email alone must not graft this Plex account onto a user who
+    // already has another media server account: users can edit their own
+    // email, so the match proves nothing. Such users link Plex from their
+    // profile instead, the same rule import-from-plex follows.
+    if (
+      !isInitialSetup &&
+      user &&
+      user.plexId !== account.id &&
+      (user.plexId || user.jellyfinUserId)
+    ) {
+      logger.warn(
+        'Failed sign-in attempt by Plex user whose email belongs to a Seerr user with another media server account',
+        {
+          label: 'API',
+          ip: req.ip,
+          userId: user.id,
+          plexId: account.id,
+          plexUsername: account.username,
+        }
+      );
+      return next({
+        status: 403,
+        message: 'Access denied.',
+      });
+    }
 
     if (!user && !(await userRepository.count())) {
       user = new User({
@@ -161,6 +192,11 @@ authRoutes.post('/plex', async (req, res, next) => {
       });
 
       settings.main.mediaServerType = MediaServerType.PLEX;
+      // Setup picks the media server, so only its sign-in is switched on, as
+      // migration 0009 does for existing installs. The defaults leave both on
+      // only so that setup itself can sign in with either.
+      settings.main.plexLogin = true;
+      settings.main.jellyfinLogin = false;
       await settings.save();
       startJobs();
 
@@ -387,6 +423,10 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
       }
       settings.main.mediaServerType = body.serverType;
       settings.jellyfin.serverType = body.serverType;
+      // Setup picks the media server, so only its sign-in is switched on; see
+      // the Plex setup branch.
+      settings.main.jellyfinLogin = true;
+      settings.main.plexLogin = false;
 
       if (missingAdminUser) {
         logger.info(
@@ -476,14 +516,15 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
       );
       user.jellyfinUsername = account.User.Name;
 
-      // The avatar follows the primary media server identity, so a secondary
-      // sign-in must not overwrite it.
+      // The avatar and display name follow the primary media server identity,
+      // so a secondary sign-in must not overwrite them. (A blank username
+      // falls back to plexUsername before jellyfinUsername.)
       if (jellyfinIsPrimary) {
         user.avatar = getUserAvatarUrl(user);
-      }
 
-      if (user.username === account.User.Name) {
-        user.username = '';
+        if (user.username === account.User.Name) {
+          user.username = '';
+        }
       }
 
       await userRepository.save(user);
@@ -672,7 +713,9 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
 authRoutes.post('/jellyfin/quickconnect/initiate', async (req, res, next) => {
   const settings = getSettings();
 
-  if (!settings.jellyfinQuickConnectEnabled) {
+  // Also serves profile linking, so this follows whether a code may be used at
+  // all; /authenticate is what enforces that Jellyfin sign-in is enabled.
+  if (!settings.jellyfinQuickConnectAvailable) {
     return next({
       status: 403,
       message: 'Quick Connect is only supported by Jellyfin.',
@@ -708,7 +751,8 @@ authRoutes.post('/jellyfin/quickconnect/initiate', async (req, res, next) => {
 authRoutes.get('/jellyfin/quickconnect/check', async (req, res, next) => {
   const settings = getSettings();
 
-  if (!settings.jellyfinQuickConnectEnabled) {
+  // See /initiate: profile linking polls this too.
+  if (!settings.jellyfinQuickConnectAvailable) {
     return next({
       status: 403,
       message: 'Quick Connect is only supported by Jellyfin.',

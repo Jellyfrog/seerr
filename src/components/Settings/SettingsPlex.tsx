@@ -6,9 +6,14 @@ import PageTitle from '@app/components/Common/PageTitle';
 import SensitiveInput from '@app/components/Common/SensitiveInput';
 import LibraryItem from '@app/components/Settings/LibraryItem';
 import SettingsBadge from '@app/components/Settings/SettingsBadge';
+import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
+import {
+  getJellyfinServerName,
+  isJellyfinPrimary,
+} from '@app/utils/mediaServer';
 import { isValidURL } from '@app/utils/urlValidationHelper';
 import { ArrowDownOnSquareIcon } from '@heroicons/react/24/outline';
 import {
@@ -65,6 +70,8 @@ const messages = defineMessages('components.Settings', {
   librariesRemaining: 'Libraries Remaining: {count}',
   startscan: 'Start Scan',
   cancelscan: 'Cancel Scan',
+  plexSignInOnly:
+    '{mediaServerName} is the media server, and only one server can fill that role. Plex is used for sign-in only, so its libraries are not scanned and do not affect availability.',
   validationHostnameRequired: 'You must provide a valid hostname or IP address',
   validationPortRequired: 'You must provide a valid port number',
   webAppUrl: '<WebAppLink>Web App</WebAppLink> URL',
@@ -132,8 +139,14 @@ const SettingsPlex = ({ isSetupSettings }: SettingsPlexProps) => {
   } = useSWR<TautulliSettings>(
     isSetupSettings ? null : '/api/v1/settings/tautulli'
   );
+  const settings = useSettings();
+  // With Jellyfin/Emby as the media server, Plex is only a sign-in provider:
+  // its libraries are never scanned, so their controls would do nothing.
+  const signInOnly = isJellyfinPrimary(
+    settings.currentSettings.mediaServerType
+  );
   const { data: dataSync, mutate: revalidateSync } = useSWR<SyncStatus>(
-    '/api/v1/settings/plex/sync',
+    signInOnly ? null : '/api/v1/settings/plex/sync',
     {
       refreshInterval: (latestData) => (latestData?.running ? 1000 : 10000),
     }
@@ -634,115 +647,132 @@ const SettingsPlex = ({ isSetupSettings }: SettingsPlexProps) => {
           );
         }}
       </Formik>
-      <div className="mb-6 mt-10">
-        <h3 className="heading">
-          {intl.formatMessage(messages.plexlibraries)}
-        </h3>
-        <p className="description">
-          {intl.formatMessage(messages.plexlibrariesDescription)}
-        </p>
-      </div>
-      <div className="section">
-        <Button
-          onClick={() => syncLibraries()}
-          disabled={isSyncing || !data?.ip || !data?.port}
-        >
-          <ArrowPathIcon
-            className={isSyncing ? 'animate-spin' : ''}
-            style={{ animationDirection: 'reverse' }}
+      {signInOnly ? (
+        <div className="mt-10">
+          <Alert
+            title={intl.formatMessage(messages.plexSignInOnly, {
+              mediaServerName: getJellyfinServerName(
+                settings.currentSettings.jellyfinServerType
+              ),
+            })}
+            type="info"
           />
-          <span>
-            {isSyncing
-              ? intl.formatMessage(messages.scanning)
-              : intl.formatMessage(messages.scan)}
-          </span>
-        </Button>
-        <ul className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4">
-          {data?.libraries.map((library) => (
-            <LibraryItem
-              name={library.name}
-              isEnabled={library.enabled}
-              key={`setting-library-${library.id}`}
-              onToggle={() => toggleLibrary(library.id)}
-            />
-          ))}
-        </ul>
-      </div>
-      <div className="mb-6 mt-10">
-        <h3 className="heading">{intl.formatMessage(messages.manualscan)}</h3>
-        <p className="description">
-          {intl.formatMessage(messages.manualscanDescription)}
-        </p>
-      </div>
-      <div className="section">
-        <div className="rounded-md bg-gray-800 p-4">
-          <div className="relative mb-6 h-8 w-full overflow-hidden rounded-full bg-gray-600">
-            {dataSync?.running && (
-              <div
-                className="h-8 bg-indigo-600 transition-all duration-200 ease-in-out"
-                style={{
-                  width: `${Math.round(
-                    (dataSync.progress / dataSync.total) * 100
-                  )}%`,
-                }}
-              />
-            )}
-            <div className="absolute inset-0 flex h-8 w-full items-center justify-center text-sm">
-              <span>
-                {dataSync?.running
-                  ? `${dataSync.progress} of ${dataSync.total}`
-                  : 'Not running'}
-              </span>
-            </div>
-          </div>
-          <div className="flex w-full flex-col sm:flex-row">
-            {dataSync?.running && (
-              <>
-                {dataSync.currentLibrary && (
-                  <div className="mb-2 mr-0 flex items-center sm:mb-0 sm:mr-2">
-                    <Badge>
-                      {intl.formatMessage(messages.currentlibrary, {
-                        name: dataSync.currentLibrary.name,
-                      })}
-                    </Badge>
-                  </div>
-                )}
-                <div className="flex items-center">
-                  <Badge badgeType="warning">
-                    {intl.formatMessage(messages.librariesRemaining, {
-                      count: dataSync.currentLibrary
-                        ? dataSync.libraries.slice(
-                            dataSync.libraries.findIndex(
-                              (library) =>
-                                library.id === dataSync.currentLibrary?.id
-                            ) + 1
-                          ).length
-                        : 0,
-                    })}
-                  </Badge>
-                </div>
-              </>
-            )}
-            <div className="flex-1 text-right">
-              {!dataSync?.running ? (
-                <Button
-                  buttonType="warning"
-                  onClick={() => startScan()}
-                  disabled={isSyncing || !activeLibraries.length}
-                >
-                  <MagnifyingGlassIcon />
-                  <span>{intl.formatMessage(messages.startscan)}</span>
-                </Button>
-              ) : (
-                <Button buttonType="danger" onClick={() => cancelScan()}>
-                  <XMarkIcon />
-                  <span>{intl.formatMessage(messages.cancelscan)}</span>
-                </Button>
-              )}
-            </div>
-          </div>
         </div>
-      </div>
+      ) : (
+        <>
+          <div className="mb-6 mt-10">
+            <h3 className="heading">
+              {intl.formatMessage(messages.plexlibraries)}
+            </h3>
+            <p className="description">
+              {intl.formatMessage(messages.plexlibrariesDescription)}
+            </p>
+          </div>
+          <div className="section">
+            <Button
+              onClick={() => syncLibraries()}
+              disabled={isSyncing || !data?.ip || !data?.port}
+            >
+              <ArrowPathIcon
+                className={isSyncing ? 'animate-spin' : ''}
+                style={{ animationDirection: 'reverse' }}
+              />
+              <span>
+                {isSyncing
+                  ? intl.formatMessage(messages.scanning)
+                  : intl.formatMessage(messages.scan)}
+              </span>
+            </Button>
+            <ul className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4">
+              {data?.libraries.map((library) => (
+                <LibraryItem
+                  name={library.name}
+                  isEnabled={library.enabled}
+                  key={`setting-library-${library.id}`}
+                  onToggle={() => toggleLibrary(library.id)}
+                />
+              ))}
+            </ul>
+          </div>
+          <div className="mb-6 mt-10">
+            <h3 className="heading">
+              {intl.formatMessage(messages.manualscan)}
+            </h3>
+            <p className="description">
+              {intl.formatMessage(messages.manualscanDescription)}
+            </p>
+          </div>
+          <div className="section">
+            <div className="rounded-md bg-gray-800 p-4">
+              <div className="relative mb-6 h-8 w-full overflow-hidden rounded-full bg-gray-600">
+                {dataSync?.running && (
+                  <div
+                    className="h-8 bg-indigo-600 transition-all duration-200 ease-in-out"
+                    style={{
+                      width: `${Math.round(
+                        (dataSync.progress / dataSync.total) * 100
+                      )}%`,
+                    }}
+                  />
+                )}
+                <div className="absolute inset-0 flex h-8 w-full items-center justify-center text-sm">
+                  <span>
+                    {dataSync?.running
+                      ? `${dataSync.progress} of ${dataSync.total}`
+                      : 'Not running'}
+                  </span>
+                </div>
+              </div>
+              <div className="flex w-full flex-col sm:flex-row">
+                {dataSync?.running && (
+                  <>
+                    {dataSync.currentLibrary && (
+                      <div className="mb-2 mr-0 flex items-center sm:mb-0 sm:mr-2">
+                        <Badge>
+                          {intl.formatMessage(messages.currentlibrary, {
+                            name: dataSync.currentLibrary.name,
+                          })}
+                        </Badge>
+                      </div>
+                    )}
+                    <div className="flex items-center">
+                      <Badge badgeType="warning">
+                        {intl.formatMessage(messages.librariesRemaining, {
+                          count: dataSync.currentLibrary
+                            ? dataSync.libraries.slice(
+                                dataSync.libraries.findIndex(
+                                  (library) =>
+                                    library.id === dataSync.currentLibrary?.id
+                                ) + 1
+                              ).length
+                            : 0,
+                        })}
+                      </Badge>
+                    </div>
+                  </>
+                )}
+                <div className="flex-1 text-right">
+                  {!dataSync?.running ? (
+                    <Button
+                      buttonType="warning"
+                      onClick={() => startScan()}
+                      disabled={isSyncing || !activeLibraries.length}
+                    >
+                      <MagnifyingGlassIcon />
+                      <span>{intl.formatMessage(messages.startscan)}</span>
+                    </Button>
+                  ) : (
+                    <Button buttonType="danger" onClick={() => cancelScan()}>
+                      <XMarkIcon />
+                      <span>{intl.formatMessage(messages.cancelscan)}</span>
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
       {!isSetupSettings && (
         <>
           <div className="mb-6 mt-10">

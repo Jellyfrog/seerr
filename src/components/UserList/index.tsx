@@ -170,9 +170,14 @@ const UserList = () => {
   };
 
   const [isDeleting, setDeleting] = useState(false);
-  const [importModal, setImportModal] = useState<'plex' | 'jellyfin' | null>(
-    null
-  );
+  // The target outlives the open flag, so the modal keeps its content while
+  // it fades out instead of swapping to the other provider's modal.
+  const [importModal, setImportModal] = useState<{
+    isOpen: boolean;
+    target: 'plex' | 'jellyfin';
+  }>({ isOpen: false, target: 'plex' });
+  const closeImportModal = () =>
+    setImportModal((modal) => ({ ...modal, isOpen: false }));
   const [deleteModal, setDeleteModal] = useState<{
     isOpen: boolean;
     user?: User;
@@ -634,21 +639,21 @@ const UserList = () => {
         leave="transition-opacity duration-300"
         leaveFrom="opacity-100"
         leaveTo="opacity-0"
-        show={importModal !== null}
+        show={importModal.isOpen}
       >
-        {importModal === 'plex' ? (
+        {importModal.target === 'plex' ? (
           <PlexImportModal
-            onCancel={() => setImportModal(null)}
+            onCancel={closeImportModal}
             onComplete={() => {
-              setImportModal(null);
+              closeImportModal();
               revalidate();
             }}
           />
         ) : (
           <JellyfinImportModal
-            onCancel={() => setImportModal(null)}
+            onCancel={closeImportModal}
             onComplete={() => {
-              setImportModal(null);
+              closeImportModal();
               revalidate();
             }}
           >
@@ -674,7 +679,7 @@ const UserList = () => {
                 key={target}
                 className={`flex-grow lg:mr-2 ${i > 0 ? 'mt-2 sm:mt-0' : ''}`}
                 buttonType="primary"
-                onClick={() => setImportModal(target)}
+                onClick={() => setImportModal({ isOpen: true, target })}
               >
                 <InboxArrowDownIcon />
                 <span>
