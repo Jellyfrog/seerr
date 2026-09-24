@@ -117,6 +117,14 @@ const UserList = () => {
   const jellyfinServerName = getJellyfinServerName(
     settings.currentSettings.jellyfinServerType
   );
+  // The primary server's import, plus Jellyfin's when it is a secondary
+  // sign-in provider: its users are imported into, or linked with, the
+  // Plex-backed user list.
+  const importTargets: ('plex' | 'jellyfin')[] = plexIsPrimary
+    ? settings.currentSettings.jellyfinLogin
+      ? ['plex', 'jellyfin']
+      : ['plex']
+    : ['jellyfin'];
   const [currentSort, setCurrentSort] = useState<Sort>('created');
   const [currentPageSize, setCurrentPageSize] = useState<number>(10);
   const [searchInput, searchQuery, setSearchInput] = useDebouncedState<string>(
@@ -661,36 +669,22 @@ const UserList = () => {
               <UserPlusIcon />
               <span>{intl.formatMessage(messages.createlocaluser)}</span>
             </Button>
-            <Button
-              className="flex-grow lg:mr-2"
-              buttonType="primary"
-              onClick={() =>
-                setImportModal(plexIsPrimary ? 'plex' : 'jellyfin')
-              }
-            >
-              <InboxArrowDownIcon />
-              <span>
-                {intl.formatMessage(messages.importfrommediaserver, {
-                  mediaServerName: plexIsPrimary ? 'Plex' : jellyfinServerName,
-                })}
-              </span>
-            </Button>
-            {/* Jellyfin as a secondary sign-in provider: its users are
-                imported into, or linked with, the Plex-backed user list. */}
-            {plexIsPrimary && settings.currentSettings.jellyfinLogin && (
+            {importTargets.map((target, i) => (
               <Button
-                className="mt-2 flex-grow sm:mt-0 lg:mr-2"
+                key={target}
+                className={`flex-grow lg:mr-2 ${i > 0 ? 'mt-2 sm:mt-0' : ''}`}
                 buttonType="primary"
-                onClick={() => setImportModal('jellyfin')}
+                onClick={() => setImportModal(target)}
               >
                 <InboxArrowDownIcon />
                 <span>
                   {intl.formatMessage(messages.importfrommediaserver, {
-                    mediaServerName: jellyfinServerName,
+                    mediaServerName:
+                      target === 'plex' ? 'Plex' : jellyfinServerName,
                   })}
                 </span>
               </Button>
-            )}
+            ))}
           </div>
           <div className="mb-2 flex flex-grow flex-col gap-2 sm:flex-row lg:mb-0 lg:flex-grow-0">
             <div className="flex flex-grow lg:flex-grow-0">

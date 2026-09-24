@@ -776,10 +776,6 @@ authRoutes.post(
       });
     }
 
-    // Jellyfin may only be an authentication provider here, in which case it
-    // cannot vouch for accounts that have never been linked.
-    const jellyfinIsPrimary = settings.jellyfinIsPrimary;
-
     try {
       const hostname = getHostname();
       const jellyfinServer = new JellyfinAPI(
@@ -808,11 +804,13 @@ authRoutes.post(
 
         user.jellyfinAuthToken = account.AccessToken;
         user.jellyfinDeviceId = deviceId;
-        if (jellyfinIsPrimary) {
+        if (settings.jellyfinIsPrimary) {
           user.avatar = getUserAvatarUrl(user);
         }
         await userRepository.save(user);
-      } else if (!jellyfinIsPrimary) {
+      } else if (!settings.jellyfinIsPrimary) {
+        // Jellyfin is only an authentication provider here, so it cannot
+        // vouch for accounts that have never been linked.
         logger.warn(
           'Failed Quick Connect sign-in attempt by Jellyfin user without a linked Seerr account',
           {
@@ -862,7 +860,7 @@ authRoutes.post(
         await userRepository.save(user);
       }
 
-      if (jellyfinIsPrimary && user.jellyfinUserId) {
+      if (settings.jellyfinIsPrimary && user.jellyfinUserId) {
         try {
           const { changed } = await checkAvatarChanged(user);
 

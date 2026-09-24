@@ -3,7 +3,7 @@ import CachedImage from '@app/components/Common/CachedImage';
 import Modal from '@app/components/Common/Modal';
 import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
-import { Permission, useUser } from '@app/hooks/useUser';
+import { useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import {
@@ -11,7 +11,7 @@ import {
   isJellyfinPrimary,
 } from '@app/utils/mediaServer';
 import type { UserResultsResponse } from '@server/interfaces/api/userInterfaces';
-import { hasPermission } from '@server/lib/permissions';
+import { canModifyUser } from '@server/lib/permissions';
 import axios from 'axios';
 import { useState } from 'react';
 import { useIntl } from 'react-intl';
@@ -131,16 +131,16 @@ const JellyfinImportModal: React.FC<JellyfinImportProps> = ({
     }
   };
 
-  // Seerr users a Jellyfin account may be attached to: those without one, and
-  // never the owner or another admin unless the owner is the one linking —
-  // the server enforces the same rule.
+  // Seerr users a Jellyfin account may be attached to: those without one that
+  // the current user may modify (the same rule the server applies).
   const linkCandidates =
     existingUsers?.results.filter(
-      (u) =>
-        !u.jellyfinUserId &&
-        (currentUser?.id === 1 ||
-          (u.id !== 1 && !hasPermission(Permission.ADMIN, u.permissions)))
+      (u) => !u.jellyfinUserId && canModifyUser(u, currentUser)
     ) ?? [];
+  const linkedUserIds = new Set(Object.values(links));
+  const seerrUserLabel = intl.formatMessage(messages.seerrUser, {
+    applicationTitle: settings.currentSettings.applicationTitle,
+  });
 
   const setLink = (jellyfinId: string, userId: number | null): void => {
     setLinks((current) => {
@@ -248,10 +248,7 @@ const JellyfinImportModal: React.FC<JellyfinImportProps> = ({
                         </th>
                         {linkCandidates.length > 0 && (
                           <th className="bg-gray-500 px-1 py-3 text-left text-xs font-medium uppercase leading-4 tracking-wider text-gray-200 md:px-6">
-                            {intl.formatMessage(messages.seerrUser, {
-                              applicationTitle:
-                                settings.currentSettings.applicationTitle,
-                            })}
+                            {seerrUserLabel}
                           </th>
                         )}
                       </tr>
@@ -324,14 +321,7 @@ const JellyfinImportModal: React.FC<JellyfinImportProps> = ({
                             {linkCandidates.length > 0 && (
                               <td className="whitespace-nowrap px-1 py-4 text-sm leading-5 text-gray-100 md:px-6">
                                 <select
-                                  aria-label={intl.formatMessage(
-                                    messages.seerrUser,
-                                    {
-                                      applicationTitle:
-                                        settings.currentSettings
-                                          .applicationTitle,
-                                    }
-                                  )}
+                                  aria-label={seerrUserLabel}
                                   value={links[user.id] ?? ''}
                                   onChange={(e) =>
                                     setLink(
@@ -349,7 +339,7 @@ const JellyfinImportModal: React.FC<JellyfinImportProps> = ({
                                     .filter(
                                       (u) =>
                                         links[user.id] === u.id ||
-                                        !Object.values(links).includes(u.id)
+                                        !linkedUserIds.has(u.id)
                                     )
                                     .map((u) => (
                                       <option key={u.id} value={u.id}>

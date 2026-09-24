@@ -10,10 +10,14 @@ import useSettings from '@app/hooks/useSettings';
 import { Permission, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
-import { getJellyfinServerName, hasPlexAccount } from '@app/utils/mediaServer';
+import {
+  getJellyfinServerName,
+  hasJellyfinAccount,
+  hasPlexAccount,
+} from '@app/utils/mediaServer';
 import PlexOAuth from '@app/utils/plex';
 import { TrashIcon } from '@heroicons/react/24/solid';
-import { MediaServerType } from '@server/constants/server';
+import { ServerType } from '@server/constants/server';
 import axios from 'axios';
 import { useRouter } from 'next/router';
 import { useMemo, useState } from 'react';
@@ -71,8 +75,9 @@ const UserLinkedAccountsSettings = () => {
 
   const applicationName = settings.currentSettings.applicationTitle;
 
-  const jellyfinIsEmby =
-    settings.currentSettings.jellyfinServerType === MediaServerType.EMBY;
+  const jellyfinServerName = getJellyfinServerName(
+    settings.currentSettings.jellyfinServerType
+  );
 
   // Both providers can be linked at once, so the list is driven by which
   // account names are actually present rather than by the user's primary type.
@@ -86,13 +91,14 @@ const UserLinkedAccountsSettings = () => {
       });
     if (user.jellyfinUsername)
       accounts.push({
-        type: jellyfinIsEmby
-          ? LinkedAccountType.Emby
-          : LinkedAccountType.Jellyfin,
+        type:
+          jellyfinServerName === ServerType.EMBY
+            ? LinkedAccountType.Emby
+            : LinkedAccountType.Jellyfin,
         username: user.jellyfinUsername,
       });
     return accounts;
-  }, [user, jellyfinIsEmby]);
+  }, [user, jellyfinServerName]);
 
   const linkPlexAccount = async () => {
     setError(null);
@@ -131,11 +137,11 @@ const UserLinkedAccountsSettings = () => {
       hide: !settings.currentSettings.plexLinkEnabled || hasPlexAccount(user),
     },
     {
-      name: getJellyfinServerName(settings.currentSettings.jellyfinServerType),
+      name: jellyfinServerName,
       action: () => setShowJellyfinModal(true),
       hide:
         !settings.currentSettings.jellyfinLinkEnabled ||
-        !!user?.jellyfinUsername,
+        hasJellyfinAccount(user),
     },
   ].filter((l) => !l.hide);
 
@@ -186,7 +192,7 @@ const UserLinkedAccountsSettings = () => {
     }
 
     return type === LinkedAccountType.Plex
-      ? settings.currentSettings.jellyfinLogin && !!user?.jellyfinUsername
+      ? settings.currentSettings.jellyfinLogin && hasJellyfinAccount(user)
       : settings.currentSettings.plexLogin && hasPlexAccount(user);
   };
 

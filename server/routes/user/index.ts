@@ -16,7 +16,11 @@ import type {
   UserResultsResponse,
   UserWatchDataResponse,
 } from '@server/interfaces/api/userInterfaces';
-import { Permission, hasPermission } from '@server/lib/permissions';
+import {
+  Permission,
+  canModifyUser,
+  hasPermission,
+} from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { isAuthenticated } from '@server/middleware/auth';
@@ -675,16 +679,17 @@ router.post(
 
         if (account.email) {
           const plexId = parseInt(account.id);
+          const matches = await userRepository
+            .createQueryBuilder('user')
+            .where('user.plexId = :plexId', { plexId })
+            .orWhere('user.email = :email', {
+              email: account.email.toLowerCase(),
+            })
+            .getMany();
           // Prefer the account's own link; the email is only a fallback for
           // adopting a local-only user.
           const user =
-            (await userRepository.findOne({ where: { plexId } })) ??
-            (await userRepository
-              .createQueryBuilder('user')
-              .where('user.email = :email', {
-                email: account.email.toLowerCase(),
-              })
-              .getOne());
+            matches.find((match) => match.plexId === plexId) ?? matches[0];
 
           if (user) {
             // A matching email alone must not graft Plex onto a user who
@@ -720,12 +725,12 @@ router.post(
             await userRepository.save(user);
             refreshedUsers += 1;
           } else if (!body || body.plexIds.includes(account.id)) {
-            if (await mainPlexTv.checkUserAccess(parseInt(account.id))) {
+            if (await mainPlexTv.checkUserAccess(plexId)) {
               const newUser = new User({
                 plexUsername: account.username,
                 email: account.email,
                 permissions: settings.main.defaultPermissions,
-                plexId: parseInt(account.id),
+                plexId,
                 plexToken: '',
                 avatar: account.thumb,
               });
@@ -777,13 +782,11 @@ const linkJellyfinUsers = async (
   const userRepository = getRepository(User);
   const seenJellyfinIds = new Set<string>();
   const seenUserIds = new Set<number>();
-  const users: User[] = [];
 
   for (const link of links) {
     const jellyfinUserId = normalizeJellyfinGuid(link.jellyfinUserId);
-    const jellyfinUser = jellyfinUsersById.get(jellyfinUserId);
 
-    if (!jellyfinUserId || !jellyfinUser) {
+    if (!jellyfinUserId || !jellyfinUsersById.has(jellyfinUserId)) {
       throw new LinkError(400, 'Unknown Jellyfin user.');
     }
     if (seenJellyfinIds.has(jellyfinUserId) || seenUserIds.has(link.userId)) {
@@ -791,15 +794,24 @@ const linkJellyfinUsers = async (
     }
     seenJellyfinIds.add(jellyfinUserId);
     seenUserIds.add(link.userId);
+  }
 
-    if (await userRepository.exist({ where: { jellyfinUserId } })) {
-      throw new LinkError(
-        422,
-        'The specified account is already linked to a Seerr user.'
-      );
-    }
+  const [alreadyLinked, targets] = await Promise.all([
+    userRepository.exist({
+      where: { jellyfinUserId: In([...seenJellyfinIds]) },
+    }),
+    userRepository.find({ where: { id: In([...seenUserIds]) } }),
+  ]);
+  if (alreadyLinked) {
+    throw new LinkError(
+      422,
+      'The specified account is already linked to a Seerr user.'
+    );
+  }
 
-    const user = await userRepository.findOne({ where: { id: link.userId } });
+  const targetsById = new Map(targets.map((user) => [user.id, user]));
+  const users = links.map((link) => {
+    const user = targetsById.get(link.userId);
     if (!user) {
       throw new LinkError(404, 'User not found.');
     }
@@ -809,24 +821,24 @@ const linkJellyfinUsers = async (
         'The specified user already has a linked Jellyfin account.'
       );
     }
-    if (
-      (user.id === 1 || user.hasPermission(Permission.ADMIN)) &&
-      requester?.id !== 1
-    ) {
+    if (!canModifyUser(user, requester)) {
       throw new LinkError(
         403,
         'You do not have permission to modify this user.'
       );
     }
 
+    const jellyfinUser = jellyfinUsersById.get(
+      normalizeJellyfinGuid(link.jellyfinUserId)
+    ) as { Id: string; Name: string };
     user.jellyfinUserId = jellyfinUser.Id;
     user.jellyfinUsername = jellyfinUser.Name;
     user.jellyfinDeviceId = Buffer.from(
       user.id === 1 ? 'BOT_seerr' : `BOT_seerr_${jellyfinUser.Name}`
     ).toString('base64');
     user.userType = user.resolveUserType();
-    users.push(user);
-  }
+    return user;
+  });
 
   return userRepository.save(users);
 };

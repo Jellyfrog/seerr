@@ -1,30 +1,8 @@
-import { MediaServerType, ServerType } from '@server/constants/server';
-
-/**
- * The display name of the configured Jellyfin/Emby connection.
- *
- * Mirrors the `jellyfinServerName` getter on the server's settings. Derive the
- * name here rather than inlining the comparison: written out per call site it
- * drifts, both in which field it reads and in which way round the ternary goes.
- */
-export const getJellyfinServerName = (
-  jellyfinServerType: MediaServerType
-): ServerType =>
-  jellyfinServerType === MediaServerType.EMBY
-    ? ServerType.EMBY
-    : ServerType.JELLYFIN;
-
-/** Whether Plex is the media backend. Mirrors `Settings.plexIsPrimary`. */
-export const isPlexPrimary = (mediaServerType: MediaServerType): boolean =>
-  mediaServerType === MediaServerType.PLEX;
-
-/**
- * Whether Jellyfin/Emby is the media backend. Mirrors
- * `Settings.jellyfinIsPrimary`.
- */
-export const isJellyfinPrimary = (mediaServerType: MediaServerType): boolean =>
-  mediaServerType === MediaServerType.JELLYFIN ||
-  mediaServerType === MediaServerType.EMBY;
+export {
+  getJellyfinServerName,
+  isJellyfinPrimary,
+  isPlexPrimary,
+} from '@server/lib/mediaServer';
 
 /**
  * Whether a user has a Plex account linked.
@@ -40,3 +18,8 @@ export const isJellyfinPrimary = (mediaServerType: MediaServerType): boolean =>
 export const hasPlexAccount = (user?: {
   plexUsername?: string | null;
 }): boolean => !!user?.plexUsername;
+
+/** Whether a user has a Jellyfin/Emby account linked; see `hasPlexAccount`. */
+export const hasJellyfinAccount = (user?: {
+  jellyfinUsername?: string | null;
+}): boolean => !!user?.jellyfinUsername;

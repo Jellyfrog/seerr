@@ -1,5 +1,11 @@
-import { MediaServerType, ServerType } from '@server/constants/server';
+import type { ServerType } from '@server/constants/server';
+import { MediaServerType } from '@server/constants/server';
 import { UserType } from '@server/constants/user';
+import {
+  getJellyfinServerName,
+  isJellyfinPrimary,
+  isPlexPrimary,
+} from '@server/lib/mediaServer';
 import { Permission } from '@server/lib/permissions';
 import { runMigrations } from '@server/lib/settings/migrator';
 import type { AvailableLocale } from '@server/types/languages';
@@ -736,15 +742,12 @@ class Settings {
 
   /** Whether Plex is the media backend rather than only an auth provider. */
   get plexIsPrimary(): boolean {
-    return this.data.main.mediaServerType === MediaServerType.PLEX;
+    return isPlexPrimary(this.data.main.mediaServerType);
   }
 
   /** Whether Jellyfin/Emby is the media backend rather than only an auth provider. */
   get jellyfinIsPrimary(): boolean {
-    return (
-      this.data.main.mediaServerType === MediaServerType.JELLYFIN ||
-      this.data.main.mediaServerType === MediaServerType.EMBY
-    );
+    return isJellyfinPrimary(this.data.main.mediaServerType);
   }
 
   /** Whether a Plex server connection has been set up. */
@@ -792,9 +795,7 @@ class Settings {
 
   /** The display name of the configured Jellyfin/Emby connection. */
   get jellyfinServerName(): ServerType {
-    return this.jellyfinServerType === MediaServerType.EMBY
-      ? ServerType.EMBY
-      : ServerType.JELLYFIN;
+    return getJellyfinServerName(this.jellyfinServerType);
   }
 
   /** The user type that an account on the configured Jellyfin/Emby server gets. */

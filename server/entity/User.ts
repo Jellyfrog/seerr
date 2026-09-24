@@ -188,8 +188,10 @@ export class User {
    * user whose only account is on the secondary provider still gets that
    * provider's type — they can sign in with it, so they are not local-only.
    *
-   * Every write to `userType` should go through this rather than reading the
-   * media server type directly, or the two drift apart.
+   * Routes that link or unlink an account, or may run while either provider
+   * is secondary, should set `userType` through this rather than reading the
+   * media server type directly, or the two drift apart. Sign-in paths that
+   * only run for the primary provider still assign it directly.
    */
   public resolveUserType(): UserType {
     const settings = getSettings();
