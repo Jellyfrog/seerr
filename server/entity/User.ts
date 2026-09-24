@@ -180,6 +180,29 @@ export class User {
     return !!hasPermission(permissions, this.permissions, options);
   }
 
+  /**
+   * The user type implied by the media server accounts currently linked.
+   *
+   * The primary media server wins wherever the user has an account on it, so
+   * signing in through a secondary provider never rewrites their identity. A
+   * user whose only account is on the secondary provider still gets that
+   * provider's type — they can sign in with it, so they are not local-only.
+   *
+   * Routes that link or unlink an account, or may run while either provider
+   * is secondary, should set `userType` through this rather than reading the
+   * media server type directly, or the two drift apart. Sign-in paths that
+   * only run for the primary provider still assign it directly.
+   */
+  public resolveUserType(): UserType {
+    const settings = getSettings();
+
+    if (this.jellyfinUserId && (settings.jellyfinIsPrimary || !this.plexId)) {
+      return settings.jellyfinUserType;
+    }
+
+    return this.plexId ? UserType.PLEX : UserType.LOCAL;
+  }
+
   public passwordMatch(password: string): Promise<boolean> {
     return new Promise((resolve) => {
       if (this.password) {

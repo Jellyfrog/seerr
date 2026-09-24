@@ -18,6 +18,7 @@ import { scheduledJobs } from '@server/job/schedule';
 import type { AvailableCacheIds } from '@server/lib/cache';
 import cacheManager from '@server/lib/cache';
 import ImageProxy from '@server/lib/imageproxy';
+import { isJellyfinPrimary, isPlexPrimary } from '@server/lib/mediaServer';
 import { Permission } from '@server/lib/permissions';
 import { jellyfinFullScanner } from '@server/lib/scanners/jellyfin';
 import { plexFullScanner } from '@server/lib/scanners/plex';
@@ -59,14 +60,21 @@ const libraryUpdateSchema = z.object({
 });
 
 const filteredMainSettings = (
-  user: User,
+  user: User | undefined,
   main: MainSettings
 ): Partial<MainSettings> => {
+  // Derived rather than stored, so that every consumer of the deprecated flag
+  // sees the same answer as /settings/public.
+  const settings = {
+    ...main,
+    mediaServerLogin: getSettings().mediaServerLoginEnabled,
+  };
+
   if (!user?.hasPermission(Permission.ADMIN)) {
-    return omit(main, 'apiKey');
+    return omit(settings, 'apiKey');
   }
 
-  return main;
+  return settings;
 };
 
 settingsRoutes.get('/main', (req, res, next) => {
@@ -79,13 +87,55 @@ settingsRoutes.get('/main', (req, res, next) => {
   res.status(200).json(filteredMainSettings(req.user, settings.main));
 });
 
-settingsRoutes.post('/main', async (req, res) => {
-  const settings = getSettings();
+/** Main settings that decide whether, and how, anyone can sign in. */
+const SIGN_IN_SETTINGS = [
+  'localLogin',
+  'plexLogin',
+  'jellyfinLogin',
+  'mediaServerLogin',
+  'mediaServerType',
+] as const;
 
-  settings.main = merge(settings.main, req.body);
+settingsRoutes.post('/main', async (req, res, next) => {
+  const settings = getSettings();
+  const body = { ...req.body };
+
+  // Legacy clients still send the single deprecated switch, which only ever
+  // governed the media server's own sign-in. Apply it to that provider rather
+  // than storing a value nothing reads.
+  if (typeof body.mediaServerLogin === 'boolean') {
+    const mediaServerType =
+      body.mediaServerType ?? settings.main.mediaServerType;
+
+    if (isPlexPrimary(mediaServerType) && body.plexLogin === undefined) {
+      body.plexLogin = body.mediaServerLogin;
+    } else if (
+      isJellyfinPrimary(mediaServerType) &&
+      body.jellyfinLogin === undefined
+    ) {
+      body.jellyfinLogin = body.mediaServerLogin;
+    }
+  }
+
+  const updated: MainSettings = merge({}, settings.main, body);
+
+  // The per-provider flags can be on for a provider that has no connection,
+  // so checking the flags alone would let an admin save a configuration that
+  // nobody, the owner included, can sign in with.
+  if (
+    SIGN_IN_SETTINGS.some((key) => key in body) &&
+    !settings.allowsSignIn(updated)
+  ) {
+    return next({
+      status: 400,
+      message: 'At least one sign-in method must remain available.',
+    });
+  }
+
+  settings.main = updated;
   await settings.save();
 
-  return res.status(200).json(settings.main);
+  return res.status(200).json(filteredMainSettings(req.user, settings.main));
 });
 
 settingsRoutes.get('/network', (req, res) => {
@@ -333,6 +383,12 @@ settingsRoutes.post('/jellyfin', async (req, res, next) => {
     Object.assign(settings.jellyfin, req.body);
     settings.jellyfin.serverId = result.Id;
     settings.jellyfin.name = result.ServerName;
+
+    // mediaServerType dictates the flavour while Jellyfin/Emby is the media
+    // backend; otherwise the value just assigned from the request stands. The
+    // getter already encodes that precedence, and normalises anything invalid.
+    settings.jellyfin.serverType = settings.jellyfinServerType;
+
     await settings.save();
   } catch (e) {
     if (e instanceof ApiError) {
