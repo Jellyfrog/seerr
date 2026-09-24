@@ -3,10 +3,15 @@ import CachedImage from '@app/components/Common/CachedImage';
 import Modal from '@app/components/Common/Modal';
 import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
+import { Permission, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
-import { MediaServerType } from '@server/constants/server';
+import {
+  getJellyfinServerName,
+  isJellyfinPrimary,
+} from '@app/utils/mediaServer';
 import type { UserResultsResponse } from '@server/interfaces/api/userInterfaces';
+import { hasPermission } from '@server/lib/permissions';
 import axios from 'axios';
 import { useState } from 'react';
 import { useIntl } from 'react-intl';
@@ -27,6 +32,8 @@ const messages = defineMessages('components.UserList', {
   importedUsersNoPassword:
     'Imported users do not have a {applicationTitle} password set. If you disable {mediaServerName} sign-in, they will need to set a password from their profile or via a password reset link.',
   user: 'User',
+  seerrUser: '{applicationTitle} User',
+  createNewUser: 'Create new user',
   noJellyfinuserstoimport: 'There are no {mediaServerName} users to import.',
   newJellyfinsigninenabled:
     'The <strong>Enable New {mediaServerName} Sign-In</strong> setting is currently enabled. {mediaServerName} users with library access do not need to be imported in order to sign in.',
@@ -41,7 +48,14 @@ const JellyfinImportModal: React.FC<JellyfinImportProps> = ({
   const settings = useSettings();
   const { addToast } = useToasts();
   const [isImporting, setImporting] = useState(false);
+  const { user: currentUser } = useUser();
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
+  // Jellyfin user id -> id of the existing Seerr user to link it to. A
+  // selected Jellyfin user without an entry here gets a new Seerr user.
+  const [links, setLinks] = useState<Record<string, number>>({});
+  const mediaServerName = getJellyfinServerName(
+    settings.currentSettings.jellyfinServerType
+  );
   const { data, error } = useSWR<
     {
       id: string;
@@ -64,7 +78,12 @@ const JellyfinImportModal: React.FC<JellyfinImportProps> = ({
     try {
       const { data: createdUsers } = await axios.post(
         '/api/v1/user/import-from-jellyfin',
-        { jellyfinUserIds: selectedUsers }
+        {
+          jellyfinUserIds: selectedUsers.filter((id) => !(id in links)),
+          links: selectedUsers
+            .filter((id) => id in links)
+            .map((id) => ({ jellyfinUserId: id, userId: links[id] })),
+        }
       );
 
       if (!createdUsers.length) {
@@ -75,10 +94,7 @@ const JellyfinImportModal: React.FC<JellyfinImportProps> = ({
         intl.formatMessage(messages.importedfromJellyfin, {
           userCount: createdUsers.length,
           strong: (msg: React.ReactNode) => <strong>{msg}</strong>,
-          mediaServerName:
-            settings.currentSettings.mediaServerType === MediaServerType.EMBY
-              ? 'Emby'
-              : 'Jellyfin',
+          mediaServerName,
         }),
         {
           autoDismiss: true,
@@ -89,10 +105,7 @@ const JellyfinImportModal: React.FC<JellyfinImportProps> = ({
       addToast(
         intl.formatMessage(messages.importedUsersNoPassword, {
           applicationTitle: settings.currentSettings.applicationTitle,
-          mediaServerName:
-            settings.currentSettings.mediaServerType === MediaServerType.EMBY
-              ? 'Emby'
-              : 'Jellyfin',
+          mediaServerName,
         }),
         {
           autoDismiss: false,
@@ -106,10 +119,7 @@ const JellyfinImportModal: React.FC<JellyfinImportProps> = ({
     } catch {
       addToast(
         intl.formatMessage(messages.importfromJellyfinerror, {
-          mediaServerName:
-            settings.currentSettings.mediaServerType === MediaServerType.EMBY
-              ? 'Emby'
-              : 'Jellyfin',
+          mediaServerName,
         }),
         {
           autoDismiss: true,
@@ -121,6 +131,32 @@ const JellyfinImportModal: React.FC<JellyfinImportProps> = ({
     }
   };
 
+  // Seerr users a Jellyfin account may be attached to: those without one, and
+  // never the owner or another admin unless the owner is the one linking —
+  // the server enforces the same rule.
+  const linkCandidates =
+    existingUsers?.results.filter(
+      (u) =>
+        !u.jellyfinUserId &&
+        (currentUser?.id === 1 ||
+          (u.id !== 1 && !hasPermission(Permission.ADMIN, u.permissions)))
+    ) ?? [];
+
+  const setLink = (jellyfinId: string, userId: number | null): void => {
+    setLinks((current) => {
+      const next = { ...current };
+      if (userId === null) {
+        delete next[jellyfinId];
+      } else {
+        next[jellyfinId] = userId;
+      }
+      return next;
+    });
+    if (userId !== null && !selectedUsers.includes(jellyfinId)) {
+      setSelectedUsers((users) => [...users, jellyfinId]);
+    }
+  };
+
   const isSelectedUser = (JellyfinId: string): boolean =>
     selectedUsers.includes(JellyfinId);
 
@@ -129,6 +165,7 @@ const JellyfinImportModal: React.FC<JellyfinImportProps> = ({
   const toggleUser = (JellyfinId: string): void => {
     if (selectedUsers.includes(JellyfinId)) {
       setSelectedUsers((users) => users.filter((user) => user !== JellyfinId));
+      setLink(JellyfinId, null);
     } else {
       setSelectedUsers((users) => [...users, JellyfinId]);
     }
@@ -139,6 +176,7 @@ const JellyfinImportModal: React.FC<JellyfinImportProps> = ({
       setSelectedUsers(data.map((user) => user.id));
     } else {
       setSelectedUsers([]);
+      setLinks({});
     }
   };
 
@@ -146,10 +184,7 @@ const JellyfinImportModal: React.FC<JellyfinImportProps> = ({
     <Modal
       loading={!data && !error}
       title={intl.formatMessage(messages.importfromJellyfin, {
-        mediaServerName:
-          settings.currentSettings.mediaServerType === MediaServerType.EMBY
-            ? 'Emby'
-            : 'Jellyfin',
+        mediaServerName,
       })}
       onOk={() => {
         importUsers();
@@ -162,21 +197,18 @@ const JellyfinImportModal: React.FC<JellyfinImportProps> = ({
     >
       {data?.length ? (
         <>
-          {settings.currentSettings.newPlexLogin && (
-            <Alert
-              title={intl.formatMessage(messages.newJellyfinsigninenabled, {
-                mediaServerName:
-                  settings.currentSettings.mediaServerType ===
-                  MediaServerType.EMBY
-                    ? 'Emby'
-                    : 'Jellyfin',
-                strong: (msg: React.ReactNode) => (
-                  <strong className="font-semibold text-white">{msg}</strong>
-                ),
-              })}
-              type="info"
-            />
-          )}
+          {settings.currentSettings.newPlexLogin &&
+            isJellyfinPrimary(settings.currentSettings.mediaServerType) && (
+              <Alert
+                title={intl.formatMessage(messages.newJellyfinsigninenabled, {
+                  mediaServerName,
+                  strong: (msg: React.ReactNode) => (
+                    <strong className="font-semibold text-white">{msg}</strong>
+                  ),
+                })}
+                type="info"
+              />
+            )}
           <div className="flex flex-col">
             <div className="-mx-4 sm:mx-0">
               <div className="inline-block min-w-full py-2 align-middle">
@@ -214,6 +246,14 @@ const JellyfinImportModal: React.FC<JellyfinImportProps> = ({
                         <th className="bg-gray-500 px-1 py-3 text-left text-xs font-medium uppercase leading-4 tracking-wider text-gray-200 md:px-6">
                           {intl.formatMessage(messages.user)}
                         </th>
+                        {linkCandidates.length > 0 && (
+                          <th className="bg-gray-500 px-1 py-3 text-left text-xs font-medium uppercase leading-4 tracking-wider text-gray-200 md:px-6">
+                            {intl.formatMessage(messages.seerrUser, {
+                              applicationTitle:
+                                settings.currentSettings.applicationTitle,
+                            })}
+                          </th>
+                        )}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-700 bg-gray-600">
@@ -281,6 +321,44 @@ const JellyfinImportModal: React.FC<JellyfinImportProps> = ({
                                 </div>
                               </div>
                             </td>
+                            {linkCandidates.length > 0 && (
+                              <td className="whitespace-nowrap px-1 py-4 text-sm leading-5 text-gray-100 md:px-6">
+                                <select
+                                  aria-label={intl.formatMessage(
+                                    messages.seerrUser,
+                                    {
+                                      applicationTitle:
+                                        settings.currentSettings
+                                          .applicationTitle,
+                                    }
+                                  )}
+                                  value={links[user.id] ?? ''}
+                                  onChange={(e) =>
+                                    setLink(
+                                      user.id,
+                                      e.target.value
+                                        ? Number(e.target.value)
+                                        : null
+                                    )
+                                  }
+                                >
+                                  <option value="">
+                                    {intl.formatMessage(messages.createNewUser)}
+                                  </option>
+                                  {linkCandidates
+                                    .filter(
+                                      (u) =>
+                                        links[user.id] === u.id ||
+                                        !Object.values(links).includes(u.id)
+                                    )
+                                    .map((u) => (
+                                      <option key={u.id} value={u.id}>
+                                        {u.displayName}
+                                      </option>
+                                    ))}
+                                </select>
+                              </td>
+                            )}
                           </tr>
                         ))}
                     </tbody>
@@ -293,10 +371,7 @@ const JellyfinImportModal: React.FC<JellyfinImportProps> = ({
       ) : (
         <Alert
           title={intl.formatMessage(messages.noJellyfinuserstoimport, {
-            mediaServerName:
-              settings.currentSettings.mediaServerType === MediaServerType.EMBY
-                ? 'Emby'
-                : 'Jellyfin',
+            mediaServerName,
           })}
           type="info"
         />
