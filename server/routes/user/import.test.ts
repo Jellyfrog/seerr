@@ -262,6 +262,21 @@ describe('POST /user/import-from-jellyfin with links', () => {
     assert.strictEqual(alreadyLinked.status, 422);
     assert.strictEqual((await findUser(carol.id)).jellyfinUserId, CAROL_ID);
   });
+  it('saves nothing when creating a user fails after the links are made', async () => {
+    const carol = await createUser({ email: 'carol@seerr.dev' });
+    // New users take their Jellyfin name as their email, so this clashes
+    // with the user created for Bob.
+    await createUser({ email: 'bob' });
+    const agent = await loginAs('admin@seerr.dev');
+
+    const res = await agent.post('/user/import-from-jellyfin').send({
+      jellyfinUserIds: [BOB_ID],
+      links: [{ jellyfinUserId: ALICE_ID, userId: carol.id }],
+    });
+
+    assert.strictEqual(res.status, 500);
+    assert.strictEqual((await findUser(carol.id)).jellyfinUserId, null);
+  });
 });
 
 describe('POST /user/import-from-plex email matching', () => {

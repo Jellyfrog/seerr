@@ -22,7 +22,7 @@ import axios from 'axios';
 import { Field, Formik } from 'formik';
 import { useState } from 'react';
 import { FormattedMessage, useIntl } from 'react-intl';
-import useSWR from 'swr';
+import useSWR, { mutate } from 'swr';
 import * as Yup from 'yup';
 
 const messages = defineMessages('components.Settings', {
@@ -518,6 +518,9 @@ const SettingsJellyfin: React.FC<SettingsJellyfinProps> = ({
             }
           } finally {
             revalidate();
+            // The server type and connection feed public settings (labels,
+            // sign-in and import options), so refresh them too.
+            mutate('/api/v1/settings/public');
           }
         }}
       >

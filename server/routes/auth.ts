@@ -1020,6 +1020,9 @@ authRoutes.post('/logout', async (req, res, next) => {
           try {
             await axios.delete(`${baseUrl}/Devices`, {
               params: { Id: user.jellyfinDeviceId },
+              // Revoking the device is best effort; an unreachable server
+              // must not hold up signing out.
+              timeout: 5000,
               headers: {
                 Authorization: `MediaBrowser Client="Seerr", Device="Seerr", DeviceId="seerr", Version="${
                   settings.jellyfinServerType === MediaServerType.EMBY

@@ -20,7 +20,6 @@ import useSWR from 'swr';
 interface JellyfinImportProps {
   onCancel?: () => void;
   onComplete?: () => void;
-  children?: React.ReactNode;
 }
 
 const messages = defineMessages('components.UserList', {
@@ -42,7 +41,6 @@ const messages = defineMessages('components.UserList', {
 const JellyfinImportModal: React.FC<JellyfinImportProps> = ({
   onCancel,
   onComplete,
-  children,
 }) => {
   const intl = useIntl();
   const settings = useSettings();
@@ -68,8 +66,13 @@ const JellyfinImportModal: React.FC<JellyfinImportProps> = ({
     revalidateOnMount: true,
   });
 
+  // Every Seerr user, independent of the user list's search and paging: the
+  // first request only learns the total, the second fetches them all.
+  const { data: userCount } = useSWR<UserResultsResponse>(
+    '/api/v1/user?take=1'
+  );
   const { data: existingUsers } = useSWR<UserResultsResponse>(
-    `/api/v1/user?take=${children}`
+    userCount ? `/api/v1/user?take=${userCount.pageInfo.results}` : null
   );
 
   const importUsers = async () => {

@@ -762,15 +762,15 @@ class LinkError extends Error {
 }
 
 /**
- * Attaches Jellyfin accounts to existing Seerr users, for when one person
- * already has a Seerr user through the other provider. All links are checked
- * before any is saved, so a bad request changes nothing.
+ * Prepares Jellyfin accounts to be attached to existing Seerr users, for when
+ * one person already has a Seerr user through the other provider. Every link
+ * is checked and nothing is saved; the caller saves the returned users.
  *
  * Linking hands sign-in for the target user to whoever holds the Jellyfin
  * account, so it follows the same rules as editing that user: only the owner
  * may touch the owner or another admin.
  */
-const linkJellyfinUsers = async (
+const prepareJellyfinLinks = async (
   links: { jellyfinUserId: string; userId: number }[],
   jellyfinUsersById: Map<string | null, { Id: string; Name: string }>,
   requester?: User
@@ -840,7 +840,7 @@ const linkJellyfinUsers = async (
     return user;
   });
 
-  return userRepository.save(users);
+  return users;
 };
 
 router.post(
@@ -885,7 +885,7 @@ router.post(
         ])
       );
 
-      const linkedUsers = await linkJellyfinUsers(
+      const linkedUsers = await prepareJellyfinLinks(
         body.links ?? [],
         jellyfinUsersById,
         req.user
@@ -922,11 +922,16 @@ router.post(
           // Jellyfin may only be an authentication provider here, in which case
           // mediaServerType would report the wrong flavour entirely.
           newUser.userType = newUser.resolveUserType();
-
-          await userRepository.save(newUser);
           createdUsers.push(newUser);
         }
       }
+
+      // Links and new users land together or not at all, so a failure part
+      // way through never leaves a retry facing links it already made.
+      await dataSource.transaction((manager) =>
+        manager.save([...linkedUsers, ...createdUsers])
+      );
+
       return res
         .status(201)
         .json(User.filterMany([...linkedUsers, ...createdUsers]));

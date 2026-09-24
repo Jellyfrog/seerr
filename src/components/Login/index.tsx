@@ -50,19 +50,21 @@ const Login = () => {
   // Plex signs in through a popup, so only Jellyfin and local login occupy the
   // form area. `formMode` decides which of the two is currently shown; every
   // other enabled provider is offered as a button below it. The media server's
-  // own sign-in leads: when that is Plex, the Jellyfin form never opens by
-  // default, leaving the Plex button first (and large when no form shows).
+  // own sign-in leads. When Jellyfin is only a sign-in provider, its form only
+  // accepts accounts that are already linked, so it opens by default only when
+  // it is the sole form-based option and Plex sign-in is off.
   const [formMode, setFormMode] = useState<'jellyfin' | 'local' | null>(() => {
-    if (
-      plexLoginEnabled &&
-      !isJellyfinPrimary(settings.currentSettings.mediaServerType)
-    ) {
-      return localLoginEnabled ? 'local' : null;
+    if (isJellyfinPrimary(settings.currentSettings.mediaServerType)) {
+      return jellyfinLoginEnabled
+        ? 'jellyfin'
+        : localLoginEnabled
+          ? 'local'
+          : null;
     }
-    return jellyfinLoginEnabled
-      ? 'jellyfin'
-      : localLoginEnabled
-        ? 'local'
+    return localLoginEnabled
+      ? 'local'
+      : !plexLoginEnabled && jellyfinLoginEnabled
+        ? 'jellyfin'
         : null;
   });
 
