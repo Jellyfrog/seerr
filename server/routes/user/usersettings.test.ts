@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { before, beforeEach, describe, it, mock } from 'node:test';
 
 import JellyfinAPI from '@server/api/jellyfin';
+import PlexTvAPI from '@server/api/plextv';
+import { ApiErrorCode } from '@server/constants/error';
 import { MediaServerType } from '@server/constants/server';
 import { UserType } from '@server/constants/user';
 import { getRepository } from '@server/datasource';
@@ -30,6 +32,20 @@ const authenticateQCMock = mock.method(
   JellyfinAPI.prototype,
   'authenticateQuickConnect',
   async () => ({ ...defaultAuthenticateResponse })
+);
+
+const PLEX_ACCOUNT_ID = 424242;
+
+mock.method(
+  PlexTvAPI.prototype,
+  'getUser',
+  async () =>
+    ({
+      id: PLEX_ACCOUNT_ID,
+      email: 'someone-else@plex.tv',
+      username: 'plexfriend',
+      authToken: 'plex-token',
+    }) as Awaited<ReturnType<PlexTvAPI['getUser']>>
 );
 
 let app: Express;
@@ -130,5 +146,78 @@ describe('POST /user/:id/settings/linked-accounts/jellyfin/quickconnect', () => 
       where: { id: userId },
     });
     assert.strictEqual(user.jellyfinUserId, null);
+  });
+
+  it('returns ACCOUNT_ALREADY_LINKED when the Jellyfin account is already linked', async () => {
+    const { agent, userId } = await loginAs('demo@seerr.dev', 'test1234');
+    await getRepository(User).update(
+      { email: 'admin@seerr.dev' },
+      { jellyfinUserId: defaultAuthenticateResponse.User.Id }
+    );
+
+    const res = await agent
+      .post(`/user/${userId}/settings/linked-accounts/jellyfin/quickconnect`)
+      .send({ secret: 'abc123def456abc123def456' });
+
+    assert.strictEqual(res.status, 422);
+    assert.strictEqual(res.body.code, ApiErrorCode.AccountAlreadyLinked);
+  });
+});
+
+describe('POST /user/:id/settings/linked-accounts/jellyfin', () => {
+  beforeEach(() => {
+    configureJellyfin();
+  });
+
+  it('returns ACCOUNT_ALREADY_LINKED when the Jellyfin account is already linked', async () => {
+    const { agent, userId } = await loginAs('demo@seerr.dev', 'test1234');
+    await getRepository(User).update(
+      { email: 'admin@seerr.dev' },
+      { jellyfinUsername: 'linkeduser' }
+    );
+
+    const res = await agent
+      .post(`/user/${userId}/settings/linked-accounts/jellyfin`)
+      .send({ username: 'linkeduser', password: 'secret' });
+
+    assert.strictEqual(res.status, 422);
+    assert.strictEqual(res.body.code, ApiErrorCode.AccountAlreadyLinked);
+  });
+});
+
+describe('POST /user/:id/settings/linked-accounts/plex', () => {
+  beforeEach(() => {
+    getSettings().main.mediaServerType = MediaServerType.PLEX;
+  });
+
+  it('returns EMAIL_MISMATCH when the Plex email does not match', async () => {
+    const { agent, userId } = await loginAs('demo@seerr.dev', 'test1234');
+
+    const res = await agent
+      .post(`/user/${userId}/settings/linked-accounts/plex`)
+      .send({ authToken: 'plex-token' });
+
+    assert.strictEqual(res.status, 422);
+    assert.strictEqual(res.body.code, ApiErrorCode.EmailMismatch);
+
+    const user = await getRepository(User).findOneOrFail({
+      where: { id: userId },
+    });
+    assert.notStrictEqual(user.plexId, PLEX_ACCOUNT_ID);
+  });
+
+  it('returns ACCOUNT_ALREADY_LINKED when the Plex account is already linked', async () => {
+    const { agent, userId } = await loginAs('demo@seerr.dev', 'test1234');
+    await getRepository(User).update(
+      { email: 'admin@seerr.dev' },
+      { plexId: PLEX_ACCOUNT_ID }
+    );
+
+    const res = await agent
+      .post(`/user/${userId}/settings/linked-accounts/plex`)
+      .send({ authToken: 'plex-token' });
+
+    assert.strictEqual(res.status, 422);
+    assert.strictEqual(res.body.code, ApiErrorCode.AccountAlreadyLinked);
   });
 });

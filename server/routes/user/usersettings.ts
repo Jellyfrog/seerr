@@ -284,6 +284,7 @@ userSettingsRoutes.post<{ authToken: string }>(
     // Do not allow linking of an already linked account
     if (await userRepository.exist({ where: { plexId: account.id } })) {
       return res.status(422).json({
+        code: ApiErrorCode.AccountAlreadyLinked,
         message: 'This Plex account is already linked to a Seerr user',
       });
     }
@@ -293,6 +294,7 @@ userSettingsRoutes.post<{ authToken: string }>(
     // Emails do not match
     if (user.email !== account.email) {
       return res.status(422).json({
+        code: ApiErrorCode.EmailMismatch,
         message:
           'This Plex account is registered under a different email address.',
       });
@@ -387,6 +389,7 @@ userSettingsRoutes.post<{ username: string; password: string }>(
       })
     ) {
       return res.status(422).json({
+        code: ApiErrorCode.AccountAlreadyLinked,
         message: 'The specified account is already linked to a Seerr user',
       });
     }
@@ -422,6 +425,7 @@ userSettingsRoutes.post<{ username: string; password: string }>(
         })
       ) {
         return res.status(422).json({
+          code: ApiErrorCode.AccountAlreadyLinked,
           message: 'The specified account is already linked to a Seerr user',
         });
       }
@@ -560,6 +564,7 @@ userSettingsRoutes.post<{ secret: string }>(
         })
       ) {
         return res.status(422).json({
+          code: ApiErrorCode.AccountAlreadyLinked,
           message: 'The specified account is already linked to a Seerr user',
         });
       }

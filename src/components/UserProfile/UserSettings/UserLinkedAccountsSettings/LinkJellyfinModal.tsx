@@ -6,6 +6,7 @@ import { useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
 import { Transition } from '@headlessui/react';
 import { QrCodeIcon } from '@heroicons/react/24/outline';
+import { ApiErrorCode } from '@server/constants/error';
 import { MediaServerType } from '@server/constants/server';
 import axios from 'axios';
 import { Field, Form, Formik } from 'formik';
@@ -102,7 +103,9 @@ const LinkJellyfinModal = ({
                   mediaServerName,
                 })
               );
-            } else if (e?.response?.status === 422) {
+            } else if (
+              e?.response?.data?.code === ApiErrorCode.AccountAlreadyLinked
+            ) {
               setError(
                 intl.formatMessage(messages.errorExists, { applicationName })
               );

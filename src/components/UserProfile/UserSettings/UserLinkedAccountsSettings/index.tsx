@@ -12,6 +12,7 @@ import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import PlexOAuth from '@app/utils/plex';
 import { TrashIcon } from '@heroicons/react/24/solid';
+import { ApiErrorCode } from '@server/constants/error';
 import { MediaServerType } from '@server/constants/server';
 import axios from 'axios';
 import { useRouter } from 'next/router';
@@ -31,7 +32,10 @@ const messages = defineMessages(
     noPermissionDescription:
       "You do not have permission to modify this user's linked accounts.",
     plexErrorUnauthorized: 'Unable to connect to Plex using your credentials',
-    plexErrorExists: 'This account is already linked to a Plex user',
+    plexErrorExists:
+      'This account is already linked to a {applicationName} user',
+    plexErrorEmailMismatch:
+      'This Plex account is registered under a different email address',
     errorUnknown: 'An unknown error occurred',
     deleteFailed: 'Unable to delete linked account.',
   }
@@ -105,15 +109,17 @@ const UserLinkedAccountsSettings = () => {
       );
       await revalidateUser();
     } catch (e) {
-      switch (e?.response?.status) {
-        case 401:
-          setError(intl.formatMessage(messages.plexErrorUnauthorized));
-          break;
-        case 422:
-          setError(intl.formatMessage(messages.plexErrorExists));
-          break;
-        default:
-          setError(intl.formatMessage(messages.errorUnknown));
+      const code = e?.response?.data?.code;
+      if (e?.response?.status === 401) {
+        setError(intl.formatMessage(messages.plexErrorUnauthorized));
+      } else if (code === ApiErrorCode.AccountAlreadyLinked) {
+        setError(
+          intl.formatMessage(messages.plexErrorExists, { applicationName })
+        );
+      } else if (code === ApiErrorCode.EmailMismatch) {
+        setError(intl.formatMessage(messages.plexErrorEmailMismatch));
+      } else {
+        setError(intl.formatMessage(messages.errorUnknown));
       }
     }
   };
