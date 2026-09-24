@@ -352,6 +352,17 @@ class JellyfinAPI extends ExternalAPI {
     }
   }
 
+  /**
+   * Revokes a device session. Callers treat this as best effort, so it gives
+   * up quickly rather than holding them up on an unreachable server.
+   */
+  public async deleteDevice(deviceId: string): Promise<void> {
+    await this.axios.delete('/Devices', {
+      params: { Id: deviceId },
+      timeout: 5000,
+    });
+  }
+
   public async getUsers(): Promise<JellyfinUserListResponse> {
     try {
       const userReponse = await this.get<JellyfinUserResponse[]>(`/Users`);

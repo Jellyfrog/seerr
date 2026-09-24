@@ -120,11 +120,12 @@ const UserList = () => {
   // The primary server's import, plus Jellyfin's when it is a secondary
   // sign-in provider: its users are imported into, or linked with, the
   // Plex-backed user list.
-  const importTargets: ('plex' | 'jellyfin')[] = plexIsPrimary
-    ? settings.currentSettings.jellyfinLogin
-      ? ['plex', 'jellyfin']
-      : ['plex']
-    : ['jellyfin'];
+  const importTargets: ('plex' | 'jellyfin')[] = [
+    plexIsPrimary ? 'plex' : 'jellyfin',
+    ...(plexIsPrimary && settings.currentSettings.jellyfinLogin
+      ? (['jellyfin'] as const)
+      : []),
+  ];
   const [currentSort, setCurrentSort] = useState<Sort>('created');
   const [currentPageSize, setCurrentPageSize] = useState<number>(10);
   const [searchInput, searchQuery, setSearchInput] = useDebouncedState<string>(

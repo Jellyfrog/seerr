@@ -54,18 +54,19 @@ const Login = () => {
   // accepts accounts that are already linked, so it opens by default only when
   // it is the sole form-based option and Plex sign-in is off.
   const [formMode, setFormMode] = useState<'jellyfin' | 'local' | null>(() => {
-    if (isJellyfinPrimary(settings.currentSettings.mediaServerType)) {
-      return jellyfinLoginEnabled
-        ? 'jellyfin'
-        : localLoginEnabled
-          ? 'local'
-          : null;
+    if (
+      jellyfinLoginEnabled &&
+      isJellyfinPrimary(settings.currentSettings.mediaServerType)
+    ) {
+      return 'jellyfin';
     }
-    return localLoginEnabled
-      ? 'local'
-      : !plexLoginEnabled && jellyfinLoginEnabled
-        ? 'jellyfin'
-        : null;
+    if (localLoginEnabled) {
+      return 'local';
+    }
+    if (jellyfinLoginEnabled && !plexLoginEnabled) {
+      return 'jellyfin';
+    }
+    return null;
   });
 
   // Effect that is triggered when the `authToken` comes back from the Plex OAuth

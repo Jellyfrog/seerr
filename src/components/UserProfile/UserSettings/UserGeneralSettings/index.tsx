@@ -127,6 +127,12 @@ const UserGeneralSettings = () => {
     );
   }, [data]);
 
+  // Plex owns this user's identity only when it is also the media server:
+  // only then does sign-in rewrite their email, and only then does watchlist
+  // sync run. The server applies the same rule.
+  const plexOwnsIdentity =
+    hasPlexAccount(user) && isPlexPrimary(currentSettings.mediaServerType);
+
   if (!data && !error) {
     return <LoadingSpinner />;
   }
@@ -320,12 +326,7 @@ const UserGeneralSettings = () => {
                       name="email"
                       type="text"
                       placeholder="example@domain.com"
-                      // Plex rewrites the email on sign-in only when it is the
-                      // media server; the server applies the same rule.
-                      disabled={
-                        hasPlexAccount(user) &&
-                        isPlexPrimary(currentSettings.mediaServerType)
-                      }
+                      disabled={plexOwnsIdentity}
                       className={
                         user?.warnings.find((w) => w === 'userEmailRequired')
                           ? 'border-2 border-red-400 focus:border-blue-600'
@@ -513,9 +514,7 @@ const UserGeneralSettings = () => {
                 [Permission.AUTO_REQUEST, Permission.AUTO_REQUEST_MOVIE],
                 { type: 'or' }
               ) &&
-                // Watchlist sync only runs with Plex as the media server.
-                hasPlexAccount(user) &&
-                isPlexPrimary(currentSettings.mediaServerType) && (
+                plexOwnsIdentity && (
                   <div className="form-row">
                     <label
                       htmlFor="watchlistSyncMovies"
@@ -563,9 +562,7 @@ const UserGeneralSettings = () => {
                 [Permission.AUTO_REQUEST, Permission.AUTO_REQUEST_TV],
                 { type: 'or' }
               ) &&
-                // Watchlist sync only runs with Plex as the media server.
-                hasPlexAccount(user) &&
-                isPlexPrimary(currentSettings.mediaServerType) && (
+                plexOwnsIdentity && (
                   <div className="form-row">
                     <label htmlFor="watchlistSyncTv" className="checkbox-label">
                       <span>

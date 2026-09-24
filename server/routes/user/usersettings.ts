@@ -1,7 +1,6 @@
 import JellyfinAPI from '@server/api/jellyfin';
 import PlexTvAPI from '@server/api/plextv';
 import { ApiErrorCode } from '@server/constants/error';
-import { MediaServerType } from '@server/constants/server';
 import { UserType } from '@server/constants/user';
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
@@ -547,7 +546,7 @@ userSettingsRoutes.post<{ secret: string }>(
         .json({ message: 'Jellyfin/Emby login is disabled' });
     }
 
-    if (settings.jellyfinServerType !== MediaServerType.JELLYFIN) {
+    if (!settings.jellyfinQuickConnectAvailable) {
       return res
         .status(403)
         .json({ message: 'Quick Connect is only supported by Jellyfin.' });

@@ -1,9 +1,9 @@
-import Alert from '@app/components/Common/Alert';
 import Badge from '@app/components/Common/Badge';
 import Button from '@app/components/Common/Button';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import SensitiveInput from '@app/components/Common/SensitiveInput';
 import LibraryItem from '@app/components/Settings/LibraryItem';
+import SignInOnlyNotice from '@app/components/Settings/SignInOnlyNotice';
 import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
@@ -62,8 +62,6 @@ const messages = defineMessages('components.Settings', {
   invalidurlerror: 'Unable to connect to {mediaServerName} server.',
   syncing: 'Syncing',
   syncJellyfin: 'Sync Libraries',
-  signInOnly:
-    'Plex is the media server, and only one server can fill that role. {mediaServerName} is used for sign-in only, so its libraries are not scanned and do not affect availability.',
   manualscanJellyfin: 'Manual Library Scan',
   manualscanDescriptionJellyfin:
     "Normally, this will only be run once every 24 hours. Seerr will check your {mediaServerName} server's recently added more aggressively. If this is your first time configuring Seerr, a one-time full manual library scan is recommended!",
@@ -272,12 +270,9 @@ const SettingsJellyfin: React.FC<SettingsJellyfinProps> = ({
   return (
     <>
       {signInOnly ? (
-        <Alert
-          title={intl.formatMessage(
-            messages.signInOnly,
-            mediaServerFormatValues
-          )}
-          type="info"
+        <SignInOnlyNotice
+          mediaServerName="Plex"
+          signInServerName={mediaServerFormatValues.mediaServerName}
         />
       ) : (
         <>

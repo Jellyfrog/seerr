@@ -21,6 +21,7 @@ import {
   canModifyUser,
   hasPermission,
 } from '@server/lib/permissions';
+import { findPlexUserMatch } from '@server/lib/plexUserMatch';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { isAuthenticated } from '@server/middleware/auth';
@@ -679,27 +680,13 @@ router.post(
 
         if (account.email) {
           const plexId = parseInt(account.id);
-          const matches = await userRepository
-            .createQueryBuilder('user')
-            .where('user.plexId = :plexId', { plexId })
-            .orWhere('user.email = :email', {
-              email: account.email.toLowerCase(),
-            })
-            .getMany();
-          // Prefer the account's own link; the email is only a fallback for
-          // adopting a local-only user.
-          const user =
-            matches.find((match) => match.plexId === plexId) ?? matches[0];
+          const { user, emailOnly } = await findPlexUserMatch({
+            id: plexId,
+            email: account.email,
+          });
 
           if (user) {
-            // A matching email alone must not graft Plex onto a user who
-            // already has a media server account: users can edit their own
-            // email, and a partial update here would leave a half-linked user
-            // whose Plex sign-in still fails. Such users link Plex themselves.
-            if (
-              user.plexId !== plexId &&
-              (user.plexId || user.jellyfinUserId)
-            ) {
+            if (emailOnly) {
               logger.warn(
                 'Skipping Plex user whose email belongs to a Seerr user with another media server account',
                 {
@@ -774,19 +761,20 @@ const prepareJellyfinLinks = async (
   links: { jellyfinUserId: string; userId: number }[],
   jellyfinUsersById: Map<string | null, { Id: string; Name: string }>,
   requester?: User
-): Promise<User[]> => {
-  if (!links.length) {
-    return [];
-  }
-
+): Promise<{ users: User[]; jellyfinIds: Set<string> }> => {
   const userRepository = getRepository(User);
   const seenJellyfinIds = new Set<string>();
   const seenUserIds = new Set<number>();
 
-  for (const link of links) {
-    const jellyfinUserId = normalizeJellyfinGuid(link.jellyfinUserId);
+  if (!links.length) {
+    return { users: [], jellyfinIds: seenJellyfinIds };
+  }
 
-    if (!jellyfinUserId || !jellyfinUsersById.has(jellyfinUserId)) {
+  const resolved = links.map((link) => {
+    const jellyfinUserId = normalizeJellyfinGuid(link.jellyfinUserId);
+    const jellyfinUser = jellyfinUsersById.get(jellyfinUserId);
+
+    if (!jellyfinUserId || !jellyfinUser) {
       throw new LinkError(400, 'Unknown Jellyfin user.');
     }
     if (seenJellyfinIds.has(jellyfinUserId) || seenUserIds.has(link.userId)) {
@@ -794,7 +782,8 @@ const prepareJellyfinLinks = async (
     }
     seenJellyfinIds.add(jellyfinUserId);
     seenUserIds.add(link.userId);
-  }
+    return { userId: link.userId, jellyfinUser };
+  });
 
   const [alreadyLinked, targets] = await Promise.all([
     userRepository.exist({
@@ -810,8 +799,8 @@ const prepareJellyfinLinks = async (
   }
 
   const targetsById = new Map(targets.map((user) => [user.id, user]));
-  const users = links.map((link) => {
-    const user = targetsById.get(link.userId);
+  const users = resolved.map(({ userId, jellyfinUser }) => {
+    const user = targetsById.get(userId);
     if (!user) {
       throw new LinkError(404, 'User not found.');
     }
@@ -828,9 +817,6 @@ const prepareJellyfinLinks = async (
       );
     }
 
-    const jellyfinUser = jellyfinUsersById.get(
-      normalizeJellyfinGuid(link.jellyfinUserId)
-    ) as { Id: string; Name: string };
     user.jellyfinUserId = jellyfinUser.Id;
     user.jellyfinUsername = jellyfinUser.Name;
     user.jellyfinDeviceId = Buffer.from(
@@ -840,7 +826,7 @@ const prepareJellyfinLinks = async (
     return user;
   });
 
-  return users;
+  return { users, jellyfinIds: seenJellyfinIds };
 };
 
 router.post(
@@ -885,29 +871,31 @@ router.post(
         ])
       );
 
-      const linkedUsers = await prepareJellyfinLinks(
-        body.links ?? [],
-        jellyfinUsersById,
-        req.user
-      );
-      const linkedIds = new Set(
-        linkedUsers.map((user) => normalizeJellyfinGuid(user.jellyfinUserId))
+      const { users: linkedUsers, jellyfinIds: linkedIds } =
+        await prepareJellyfinLinks(
+          body.links ?? [],
+          jellyfinUsersById,
+          req.user
+        );
+
+      const newIds = [
+        ...new Set(
+          (body.jellyfinUserIds ?? []).map((id) => normalizeJellyfinGuid(id))
+        ),
+      ].filter((id): id is string => !!id && !linkedIds.has(id));
+      const alreadyImported = new Set(
+        (
+          await userRepository.find({
+            select: ['jellyfinUserId'],
+            where: { jellyfinUserId: In(newIds) },
+          })
+        ).map((user) => user.jellyfinUserId)
       );
 
-      for (const rawJellyfinUserId of body.jellyfinUserIds ?? []) {
-        const jellyfinUserId = normalizeJellyfinGuid(rawJellyfinUserId);
-        if (!jellyfinUserId || linkedIds.has(jellyfinUserId)) {
-          continue;
-        }
-
+      for (const jellyfinUserId of newIds) {
         const jellyfinUser = jellyfinUsersById.get(jellyfinUserId);
 
-        const user = await userRepository.findOne({
-          select: ['id', 'jellyfinUserId'],
-          where: { jellyfinUserId: jellyfinUserId },
-        });
-
-        if (!user) {
+        if (!alreadyImported.has(jellyfinUserId)) {
           const newUser = new User({
             jellyfinUsername: jellyfinUser?.Name,
             jellyfinUserId: jellyfinUser?.Id,

@@ -6,6 +6,7 @@ import PageTitle from '@app/components/Common/PageTitle';
 import SensitiveInput from '@app/components/Common/SensitiveInput';
 import LibraryItem from '@app/components/Settings/LibraryItem';
 import SettingsBadge from '@app/components/Settings/SettingsBadge';
+import SignInOnlyNotice from '@app/components/Settings/SignInOnlyNotice';
 import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
@@ -70,8 +71,6 @@ const messages = defineMessages('components.Settings', {
   librariesRemaining: 'Libraries Remaining: {count}',
   startscan: 'Start Scan',
   cancelscan: 'Cancel Scan',
-  plexSignInOnly:
-    '{mediaServerName} is the media server, and only one server can fill that role. Plex is used for sign-in only, so its libraries are not scanned and do not affect availability.',
   validationHostnameRequired: 'You must provide a valid hostname or IP address',
   validationPortRequired: 'You must provide a valid port number',
   webAppUrl: '<WebAppLink>Web App</WebAppLink> URL',
@@ -649,13 +648,11 @@ const SettingsPlex = ({ isSetupSettings }: SettingsPlexProps) => {
       </Formik>
       {signInOnly ? (
         <div className="mt-10">
-          <Alert
-            title={intl.formatMessage(messages.plexSignInOnly, {
-              mediaServerName: getJellyfinServerName(
-                settings.currentSettings.jellyfinServerType
-              ),
-            })}
-            type="info"
+          <SignInOnlyNotice
+            mediaServerName={getJellyfinServerName(
+              settings.currentSettings.jellyfinServerType
+            )}
+            signInServerName="Plex"
           />
         </div>
       ) : (

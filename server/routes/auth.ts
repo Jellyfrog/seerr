@@ -7,14 +7,13 @@ import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
 import { startJobs } from '@server/job/schedule';
 import { Permission } from '@server/lib/permissions';
+import { findPlexUserMatch } from '@server/lib/plexUserMatch';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { isAuthenticated } from '@server/middleware/auth';
 import { checkAvatarChanged } from '@server/routes/avatarproxy';
 import { ApiError } from '@server/types/error';
-import { getAppVersion } from '@server/utils/appVersion';
 import { getHostname } from '@server/utils/getHostname';
-import axios from 'axios';
 import { Router } from 'express';
 import net from 'net';
 import validator from 'validator';
@@ -140,36 +139,17 @@ authRoutes.post('/plex', async (req, res, next) => {
       return res.status(200).json(linkedUser.filter());
     }
 
-    // Next let's see if the user already exists. Prefer the account's own
-    // link; the email is only a fallback for adopting a local-only user.
-    const matches = await userRepository
-      .createQueryBuilder('user')
-      .where('user.plexId = :id', { id: account.id })
-      .orWhere('user.email = :email', {
-        email: account.email.toLowerCase(),
-      })
-      .getMany();
-    let user =
-      matches.find((match) => match.plexId === account.id) ??
-      matches[0] ??
-      null;
+    // Next let's see if the user already exists
+    const match = await findPlexUserMatch(account);
+    let user = match.user;
 
-    // A matching email alone must not graft this Plex account onto a user who
-    // already has another media server account: users can edit their own
-    // email, so the match proves nothing. Such users link Plex from their
-    // profile instead, the same rule import-from-plex follows.
-    if (
-      !isInitialSetup &&
-      user &&
-      user.plexId !== account.id &&
-      (user.plexId || user.jellyfinUserId)
-    ) {
+    if (!isInitialSetup && match.emailOnly) {
       logger.warn(
         'Failed sign-in attempt by Plex user whose email belongs to a Seerr user with another media server account',
         {
           label: 'API',
           ip: req.ip,
-          userId: user.id,
+          userId: user?.id,
           plexId: account.id,
           plexUsername: account.username,
         }
@@ -1016,29 +996,11 @@ authRoutes.post('/logout', async (req, res, next) => {
 
       if (user?.jellyfinUserId && user.jellyfinDeviceId) {
         try {
-          const baseUrl = getHostname();
-          try {
-            await axios.delete(`${baseUrl}/Devices`, {
-              params: { Id: user.jellyfinDeviceId },
-              // Revoking the device is best effort; an unreachable server
-              // must not hold up signing out.
-              timeout: 5000,
-              headers: {
-                Authorization: `MediaBrowser Client="Seerr", Device="Seerr", DeviceId="seerr", Version="${
-                  settings.jellyfinServerType === MediaServerType.EMBY
-                    ? '1.0.0'
-                    : getAppVersion()
-                }", Token="${settings.jellyfin.apiKey}"`,
-              },
-            });
-          } catch (error) {
-            logger.error('Failed to delete Jellyfin device', {
-              label: 'Auth',
-              error: error instanceof Error ? error.message : 'Unknown error',
-              userId: user.id,
-              jellyfinUserId: user.jellyfinUserId,
-            });
-          }
+          await new JellyfinAPI(
+            getHostname(),
+            settings.jellyfin.apiKey,
+            'seerr'
+          ).deleteDevice(user.jellyfinDeviceId);
         } catch (error) {
           logger.error('Failed to delete Jellyfin device', {
             label: 'Auth',
