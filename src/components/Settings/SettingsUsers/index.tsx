@@ -9,9 +9,12 @@ import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
-import { getJellyfinServerName } from '@app/utils/mediaServer';
+import {
+  getJellyfinServerName,
+  isJellyfinPrimary,
+  isPlexPrimary,
+} from '@app/utils/mediaServer';
 import { ArrowDownOnSquareIcon } from '@heroicons/react/24/outline';
-import { MediaServerType } from '@server/constants/server';
 import type { MainSettings } from '@server/lib/settings';
 import axios from 'axios';
 import { Field, Form, Formik } from 'formik';
@@ -94,22 +97,18 @@ const SettingsUsers = () => {
     settings.currentSettings.jellyfinServerType
   );
 
-  const mediaServerFormatValues = {
-    mediaServerName:
-      settings.currentSettings.mediaServerType === MediaServerType.JELLYFIN
-        ? 'Jellyfin'
-        : settings.currentSettings.mediaServerType === MediaServerType.EMBY
-          ? 'Emby'
-          : settings.currentSettings.mediaServerType === MediaServerType.PLEX
-            ? 'Plex'
-            : undefined,
-  };
+  const plexIsPrimary = isPlexPrimary(settings.currentSettings.mediaServerType);
+  const jellyfinIsPrimary = isJellyfinPrimary(
+    settings.currentSettings.mediaServerType
+  );
 
-  const plexIsPrimary =
-    settings.currentSettings.mediaServerType === MediaServerType.PLEX;
-  const jellyfinIsPrimary =
-    settings.currentSettings.mediaServerType === MediaServerType.JELLYFIN ||
-    settings.currentSettings.mediaServerType === MediaServerType.EMBY;
+  const mediaServerFormatValues = {
+    mediaServerName: plexIsPrimary
+      ? 'Plex'
+      : jellyfinIsPrimary
+        ? jellyfinServerName
+        : undefined,
+  };
 
   return (
     <>

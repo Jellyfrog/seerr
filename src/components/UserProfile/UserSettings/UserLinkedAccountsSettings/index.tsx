@@ -10,6 +10,7 @@ import useSettings from '@app/hooks/useSettings';
 import { Permission, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
+import { getJellyfinServerName, hasPlexAccount } from '@app/utils/mediaServer';
 import PlexOAuth from '@app/utils/plex';
 import { TrashIcon } from '@heroicons/react/24/solid';
 import { MediaServerType } from '@server/constants/server';
@@ -70,6 +71,9 @@ const UserLinkedAccountsSettings = () => {
 
   const applicationName = settings.currentSettings.applicationTitle;
 
+  const jellyfinIsEmby =
+    settings.currentSettings.jellyfinServerType === MediaServerType.EMBY;
+
   // Both providers can be linked at once, so the list is driven by which
   // account names are actually present rather than by the user's primary type.
   const accounts: LinkedAccount[] = useMemo(() => {
@@ -82,14 +86,13 @@ const UserLinkedAccountsSettings = () => {
       });
     if (user.jellyfinUsername)
       accounts.push({
-        type:
-          settings.currentSettings.jellyfinServerType === MediaServerType.EMBY
-            ? LinkedAccountType.Emby
-            : LinkedAccountType.Jellyfin,
+        type: jellyfinIsEmby
+          ? LinkedAccountType.Emby
+          : LinkedAccountType.Jellyfin,
         username: user.jellyfinUsername,
       });
     return accounts;
-  }, [user, settings.currentSettings.jellyfinServerType]);
+  }, [user, jellyfinIsEmby]);
 
   const linkPlexAccount = async () => {
     setError(null);
@@ -118,9 +121,6 @@ const UserLinkedAccountsSettings = () => {
     }
   };
 
-  const jellyfinIsEmby =
-    settings.currentSettings.jellyfinServerType === MediaServerType.EMBY;
-
   const linkable = [
     {
       name: 'Plex',
@@ -128,20 +128,14 @@ const UserLinkedAccountsSettings = () => {
         plexOAuth.preparePopup();
         setTimeout(() => linkPlexAccount(), 1500);
       },
-      hide:
-        !settings.currentSettings.plexLinkEnabled ||
-        accounts.some((a) => a.type === LinkedAccountType.Plex),
+      hide: !settings.currentSettings.plexLinkEnabled || hasPlexAccount(user),
     },
     {
-      name: jellyfinIsEmby ? 'Emby' : 'Jellyfin',
+      name: getJellyfinServerName(settings.currentSettings.jellyfinServerType),
       action: () => setShowJellyfinModal(true),
       hide:
         !settings.currentSettings.jellyfinLinkEnabled ||
-        accounts.some((a) =>
-          jellyfinIsEmby
-            ? a.type === LinkedAccountType.Emby
-            : a.type === LinkedAccountType.Jellyfin
-        ),
+        !!user?.jellyfinUsername,
     },
   ].filter((l) => !l.hide);
 
@@ -192,10 +186,8 @@ const UserLinkedAccountsSettings = () => {
     }
 
     return type === LinkedAccountType.Plex
-      ? settings.currentSettings.jellyfinLogin &&
-          accounts.some((a) => a.type !== LinkedAccountType.Plex)
-      : settings.currentSettings.plexLogin &&
-          accounts.some((a) => a.type === LinkedAccountType.Plex);
+      ? settings.currentSettings.jellyfinLogin && !!user?.jellyfinUsername
+      : settings.currentSettings.plexLogin && hasPlexAccount(user);
   };
 
   return (

@@ -758,6 +758,20 @@ class Settings {
   }
 
   /**
+   * Whether Plex can be used at all: either a connection is set up, or Plex is
+   * the media backend, in which case sign-in keeps working during setup before
+   * a server has been picked.
+   */
+  get plexAvailable(): boolean {
+    return this.plexConfigured || this.plexIsPrimary;
+  }
+
+  /** Whether Jellyfin/Emby can be used at all; see `plexAvailable`. */
+  get jellyfinAvailable(): boolean {
+    return this.jellyfinConfigured || this.jellyfinIsPrimary;
+  }
+
+  /**
    * Whether the configured Jellyfin connection is a Jellyfin or an Emby server.
    */
   get jellyfinServerType(): MediaServerType.JELLYFIN | MediaServerType.EMBY {
@@ -790,23 +804,21 @@ class Settings {
       : UserType.JELLYFIN;
   }
 
-  /**
-   * Whether users may sign in with Plex.
-   *
-   * A connection counts as usable while Plex is the media backend even if no
-   * server has been picked yet, so that sign-in keeps working during setup.
-   */
+  /** Whether users may sign in with Plex. */
   get plexLoginEnabled(): boolean {
-    return (
-      this.data.main.plexLogin && (this.plexConfigured || this.plexIsPrimary)
-    );
+    return this.data.main.plexLogin && this.plexAvailable;
   }
 
   /** Whether users may sign in with Jellyfin/Emby. */
   get jellyfinLoginEnabled(): boolean {
+    return this.data.main.jellyfinLogin && this.jellyfinAvailable;
+  }
+
+  /** Whether users may sign in with Jellyfin Quick Connect (Emby lacks it). */
+  get jellyfinQuickConnectEnabled(): boolean {
     return (
-      this.data.main.jellyfinLogin &&
-      (this.jellyfinConfigured || this.jellyfinIsPrimary)
+      this.jellyfinServerType === MediaServerType.JELLYFIN &&
+      this.jellyfinLoginEnabled
     );
   }
 

@@ -14,6 +14,18 @@ export const getJellyfinServerName = (
     ? ServerType.EMBY
     : ServerType.JELLYFIN;
 
+/** Whether Plex is the media backend. Mirrors `Settings.plexIsPrimary`. */
+export const isPlexPrimary = (mediaServerType: MediaServerType): boolean =>
+  mediaServerType === MediaServerType.PLEX;
+
+/**
+ * Whether Jellyfin/Emby is the media backend. Mirrors
+ * `Settings.jellyfinIsPrimary`.
+ */
+export const isJellyfinPrimary = (mediaServerType: MediaServerType): boolean =>
+  mediaServerType === MediaServerType.JELLYFIN ||
+  mediaServerType === MediaServerType.EMBY;
+
 /**
  * Whether a user has a Plex account linked.
  *

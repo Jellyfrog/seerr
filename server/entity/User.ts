@@ -194,23 +194,11 @@ export class User {
   public resolveUserType(): UserType {
     const settings = getSettings();
 
-    if (this.plexId && settings.plexIsPrimary) {
-      return UserType.PLEX;
-    }
-
-    if (this.jellyfinUserId && settings.jellyfinIsPrimary) {
+    if (this.jellyfinUserId && (settings.jellyfinIsPrimary || !this.plexId)) {
       return settings.jellyfinUserType;
     }
 
-    if (this.plexId) {
-      return UserType.PLEX;
-    }
-
-    if (this.jellyfinUserId) {
-      return settings.jellyfinUserType;
-    }
-
-    return UserType.LOCAL;
+    return this.plexId ? UserType.PLEX : UserType.LOCAL;
   }
 
   public passwordMatch(password: string): Promise<boolean> {

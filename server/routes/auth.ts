@@ -672,10 +672,7 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
 authRoutes.post('/jellyfin/quickconnect/initiate', async (req, res, next) => {
   const settings = getSettings();
 
-  if (
-    settings.jellyfinServerType !== MediaServerType.JELLYFIN ||
-    !settings.jellyfinLoginEnabled
-  ) {
+  if (!settings.jellyfinQuickConnectEnabled) {
     return next({
       status: 403,
       message: 'Quick Connect is only supported by Jellyfin.',
@@ -711,10 +708,7 @@ authRoutes.post('/jellyfin/quickconnect/initiate', async (req, res, next) => {
 authRoutes.get('/jellyfin/quickconnect/check', async (req, res, next) => {
   const settings = getSettings();
 
-  if (
-    settings.jellyfinServerType !== MediaServerType.JELLYFIN ||
-    !settings.jellyfinLoginEnabled
-  ) {
+  if (!settings.jellyfinQuickConnectEnabled) {
     return next({
       status: 403,
       message: 'Quick Connect is only supported by Jellyfin.',
@@ -775,10 +769,7 @@ authRoutes.post(
       });
     }
 
-    if (
-      settings.jellyfinServerType !== MediaServerType.JELLYFIN ||
-      !settings.jellyfinLoginEnabled
-    ) {
+    if (!settings.jellyfinQuickConnectEnabled) {
       return next({
         status: 403,
         message: 'Quick Connect is only supported by Jellyfin.',

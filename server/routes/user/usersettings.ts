@@ -337,7 +337,7 @@ userSettingsRoutes.delete<{ id: string }>(
     const userRepository = getRepository(User);
 
     // Make sure Plex is configured
-    if (!settings.plexConfigured && !settings.plexIsPrimary) {
+    if (!settings.plexAvailable) {
       return res.status(500).json({ message: 'Plex is not configured' });
     }
 
@@ -481,7 +481,7 @@ userSettingsRoutes.delete<{ id: string }>(
     const userRepository = getRepository(User);
 
     // Make sure jellyfin is configured
-    if (!settings.jellyfinConfigured && !settings.jellyfinIsPrimary) {
+    if (!settings.jellyfinAvailable) {
       return res
         .status(500)
         .json({ message: 'Jellyfin/Emby is not configured' });
