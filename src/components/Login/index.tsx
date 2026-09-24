@@ -10,7 +10,10 @@ import PlexLoginButton from '@app/components/Login/PlexLoginButton';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
-import { getJellyfinServerName } from '@app/utils/mediaServer';
+import {
+  getJellyfinServerName,
+  isJellyfinPrimary,
+} from '@app/utils/mediaServer';
 import { Transition } from '@headlessui/react';
 import { XCircleIcon } from '@heroicons/react/24/solid';
 import { MediaServerType } from '@server/constants/server';
@@ -46,10 +49,22 @@ const Login = () => {
 
   // Plex signs in through a popup, so only Jellyfin and local login occupy the
   // form area. `formMode` decides which of the two is currently shown; every
-  // other enabled provider is offered as a button below it.
-  const [formMode, setFormMode] = useState<'jellyfin' | 'local' | null>(
-    jellyfinLoginEnabled ? 'jellyfin' : localLoginEnabled ? 'local' : null
-  );
+  // other enabled provider is offered as a button below it. The media server's
+  // own sign-in leads: when that is Plex, the Jellyfin form never opens by
+  // default, leaving the Plex button first (and large when no form shows).
+  const [formMode, setFormMode] = useState<'jellyfin' | 'local' | null>(() => {
+    if (
+      plexLoginEnabled &&
+      !isJellyfinPrimary(settings.currentSettings.mediaServerType)
+    ) {
+      return localLoginEnabled ? 'local' : null;
+    }
+    return jellyfinLoginEnabled
+      ? 'jellyfin'
+      : localLoginEnabled
+        ? 'local'
+        : null;
+  });
 
   // Effect that is triggered when the `authToken` comes back from the Plex OAuth
   // We take the token and attempt to sign in. If we get a success message, we will
