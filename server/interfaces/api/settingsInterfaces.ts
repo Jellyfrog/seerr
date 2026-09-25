@@ -33,7 +33,12 @@ export interface PublicSettingsResponse {
   hideBlocklisted: boolean;
   hideRequested: boolean;
   localLogin: boolean;
+  /** Derived from `plexLogin || jellyfinLogin`. */
   mediaServerLogin: boolean;
+  plexLogin: boolean;
+  jellyfinLogin: boolean;
+  plexLinkEnabled: boolean;
+  jellyfinLinkEnabled: boolean;
   movie4kEnabled: boolean;
   series4kEnabled: boolean;
   discoverRegion: string;

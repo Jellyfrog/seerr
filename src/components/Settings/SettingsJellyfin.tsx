@@ -3,6 +3,7 @@ import Button from '@app/components/Common/Button';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import SensitiveInput from '@app/components/Common/SensitiveInput';
 import LibraryItem from '@app/components/Settings/LibraryItem';
+import SignInOnlyNotice from '@app/components/Settings/SignInOnlyNotice';
 import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
@@ -16,7 +17,7 @@ import axios from 'axios';
 import { Field, Formik } from 'formik';
 import { useState } from 'react';
 import { FormattedMessage, useIntl } from 'react-intl';
-import useSWR from 'swr';
+import useSWR, { mutate } from 'swr';
 import * as Yup from 'yup';
 
 const messages = defineMessages('components.Settings', {
@@ -108,6 +109,10 @@ const SettingsJellyfin: React.FC<SettingsJellyfinProps> = ({
   const intl = useIntl();
   const { addToast } = useToasts();
   const settings = useSettings();
+  // With Plex as the media server, Jellyfin is only a sign-in provider: its
+  // libraries are never scanned, so their controls would do nothing.
+  const signInOnly =
+    settings.currentSettings.mediaServerType === MediaServerType.PLEX;
 
   const JellyfinSettingsSchema = Yup.object().shape({
     hostname: Yup.string()
@@ -250,12 +255,15 @@ const SettingsJellyfin: React.FC<SettingsJellyfinProps> = ({
         ? 'Jellyfin'
         : settings.currentSettings.mediaServerType === MediaServerType.EMBY
           ? 'Emby'
-          : undefined,
+          : 'Jellyfin',
   };
 
   return (
     <>
-      <div className="mb-6">
+      {signInOnly && (
+        <SignInOnlyNotice mediaServerName="Plex" signInServerName="Jellyfin" />
+      )}
+      <div className="mb-6" hidden={signInOnly}>
         <h3 className="heading">
           {intl.formatMessage(
             messages.jellyfinlibraries,
@@ -269,7 +277,7 @@ const SettingsJellyfin: React.FC<SettingsJellyfinProps> = ({
           )}
         </p>
       </div>
-      <div className="section">
+      <div className="section" hidden={signInOnly}>
         <Button onClick={() => syncLibraries()} disabled={isSyncing}>
           <svg
             className={`${isSyncing ? 'animate-spin' : ''} mr-1 h-5 w-5`}
@@ -298,7 +306,7 @@ const SettingsJellyfin: React.FC<SettingsJellyfinProps> = ({
           ))}
         </ul>
       </div>
-      <div className="mb-6 mt-10">
+      <div className="mb-6 mt-10" hidden={signInOnly}>
         <h3 className="heading">
           <FormattedMessage {...messages.manualscanJellyfin} />
         </h3>
@@ -309,7 +317,7 @@ const SettingsJellyfin: React.FC<SettingsJellyfinProps> = ({
           )}
         </p>
       </div>
-      <div className="section">
+      <div className="section" hidden={signInOnly}>
         <div className="rounded-md bg-gray-800 p-4">
           <div className="relative mb-6 h-8 w-full overflow-hidden rounded-full bg-gray-600">
             {dataSync?.running && (
@@ -487,6 +495,8 @@ const SettingsJellyfin: React.FC<SettingsJellyfinProps> = ({
             }
           } finally {
             revalidate();
+            // The connection decides whether Jellyfin sign-in is usable.
+            mutate('/api/v1/settings/public');
           }
         }}
       >

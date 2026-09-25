@@ -39,6 +39,11 @@ const JellyfinImportModal: React.FC<JellyfinImportProps> = ({
 }) => {
   const intl = useIntl();
   const settings = useSettings();
+  // Next to a Plex media server, Jellyfin is only a sign-in provider and never
+  // creates users on sign-in, whatever newPlexLogin says.
+  const newSignInEnabled =
+    settings.currentSettings.newPlexLogin &&
+    settings.currentSettings.mediaServerType !== MediaServerType.PLEX;
   const { addToast } = useToasts();
   const [isImporting, setImporting] = useState(false);
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
@@ -162,7 +167,7 @@ const JellyfinImportModal: React.FC<JellyfinImportProps> = ({
     >
       {data?.length ? (
         <>
-          {settings.currentSettings.newPlexLogin && (
+          {newSignInEnabled && (
             <Alert
               title={intl.formatMessage(messages.newJellyfinsigninenabled, {
                 mediaServerName:

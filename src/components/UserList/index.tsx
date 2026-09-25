@@ -159,6 +159,12 @@ const UserList = () => {
 
   const [isDeleting, setDeleting] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  // Jellyfin users can also be imported while Jellyfin is only a sign-in
+  // provider next to Plex; they then sign in with their Jellyfin account.
+  const [showJellyfinImportModal, setShowJellyfinImportModal] = useState(false);
+  const jellyfinImportAvailable =
+    settings.currentSettings.mediaServerType === MediaServerType.PLEX &&
+    settings.currentSettings.jellyfinLogin;
   const [deleteModal, setDeleteModal] = useState<{
     isOpen: boolean;
     user?: User;
@@ -643,6 +649,27 @@ const UserList = () => {
         )}
       </Transition>
 
+      <Transition
+        as="div"
+        enter="transition-opacity duration-300"
+        enterFrom="opacity-0"
+        enterTo="opacity-100"
+        leave="transition-opacity duration-300"
+        leaveFrom="opacity-100"
+        leaveTo="opacity-0"
+        show={showJellyfinImportModal}
+      >
+        <JellyfinImportModal
+          onCancel={() => setShowJellyfinImportModal(false)}
+          onComplete={() => {
+            setShowJellyfinImportModal(false);
+            revalidate();
+          }}
+        >
+          {data.pageInfo.results}
+        </JellyfinImportModal>
+      </Transition>
+
       <div className="flex flex-col justify-between lg:flex-row lg:items-end">
         <Header>{intl.formatMessage(messages.userlist)}</Header>
         <div className="mt-2 flex flex-grow flex-col lg:flex-grow-0 lg:flex-row">
@@ -677,6 +704,20 @@ const UserList = () => {
                       })}
               </span>
             </Button>
+            {jellyfinImportAvailable && (
+              <Button
+                className="mt-2 flex-grow sm:mt-0 lg:mr-2"
+                buttonType="primary"
+                onClick={() => setShowJellyfinImportModal(true)}
+              >
+                <InboxArrowDownIcon />
+                <span>
+                  {intl.formatMessage(messages.importfrommediaserver, {
+                    mediaServerName: 'Jellyfin',
+                  })}
+                </span>
+              </Button>
+            )}
           </div>
           <div className="mb-2 flex flex-grow flex-col gap-2 sm:flex-row lg:mb-0 lg:flex-grow-0">
             <div className="flex flex-grow lg:flex-grow-0">

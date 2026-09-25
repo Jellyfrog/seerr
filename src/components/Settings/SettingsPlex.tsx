@@ -6,9 +6,15 @@ import PageTitle from '@app/components/Common/PageTitle';
 import SensitiveInput from '@app/components/Common/SensitiveInput';
 import LibraryItem from '@app/components/Settings/LibraryItem';
 import SettingsBadge from '@app/components/Settings/SettingsBadge';
+import SignInOnlyNotice from '@app/components/Settings/SignInOnlyNotice';
+import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
+import {
+  getJellyfinServerName,
+  isJellyfinPrimary,
+} from '@app/utils/mediaServer';
 import { isValidURL } from '@app/utils/urlValidationHelper';
 import { ArrowDownOnSquareIcon } from '@heroicons/react/24/outline';
 import {
@@ -140,6 +146,12 @@ const SettingsPlex = ({ isSetupSettings }: SettingsPlexProps) => {
   );
   const intl = useIntl();
   const { addToast, removeToast } = useToasts();
+  const settings = useSettings();
+  // With Jellyfin/Emby as the media server, Plex is only a sign-in provider:
+  // its libraries are never scanned, so their controls would do nothing.
+  const signInOnly = isJellyfinPrimary(
+    settings.currentSettings.mediaServerType
+  );
 
   const PlexSettingsSchema = Yup.object().shape({
     hostname: Yup.string()
@@ -634,7 +646,17 @@ const SettingsPlex = ({ isSetupSettings }: SettingsPlexProps) => {
           );
         }}
       </Formik>
-      <div className="mb-6 mt-10">
+      {signInOnly && (
+        <div className="mt-10">
+          <SignInOnlyNotice
+            mediaServerName={getJellyfinServerName(
+              settings.currentSettings.mediaServerType
+            )}
+            signInServerName="Plex"
+          />
+        </div>
+      )}
+      <div className="mb-6 mt-10" hidden={signInOnly}>
         <h3 className="heading">
           {intl.formatMessage(messages.plexlibraries)}
         </h3>
@@ -642,7 +664,7 @@ const SettingsPlex = ({ isSetupSettings }: SettingsPlexProps) => {
           {intl.formatMessage(messages.plexlibrariesDescription)}
         </p>
       </div>
-      <div className="section">
+      <div className="section" hidden={signInOnly}>
         <Button
           onClick={() => syncLibraries()}
           disabled={isSyncing || !data?.ip || !data?.port}
@@ -668,13 +690,13 @@ const SettingsPlex = ({ isSetupSettings }: SettingsPlexProps) => {
           ))}
         </ul>
       </div>
-      <div className="mb-6 mt-10">
+      <div className="mb-6 mt-10" hidden={signInOnly}>
         <h3 className="heading">{intl.formatMessage(messages.manualscan)}</h3>
         <p className="description">
           {intl.formatMessage(messages.manualscanDescription)}
         </p>
       </div>
-      <div className="section">
+      <div className="section" hidden={signInOnly}>
         <div className="rounded-md bg-gray-800 p-4">
           <div className="relative mb-6 h-8 w-full overflow-hidden rounded-full bg-gray-600">
             {dataSync?.running && (

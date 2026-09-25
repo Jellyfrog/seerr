@@ -1,4 +1,6 @@
 import { MediaServerType } from '@server/constants/server';
+import { UserType } from '@server/constants/user';
+import { isJellyfinPrimary, isPlexPrimary } from '@server/lib/mediaServer';
 import { Permission } from '@server/lib/permissions';
 import { runMigrations } from '@server/lib/settings/migrator';
 import type { AvailableLocale } from '@server/types/languages';
@@ -143,7 +145,14 @@ export interface MainSettings {
   hideBlocklisted: boolean;
   hideRequested: boolean;
   localLogin: boolean;
+  /**
+   * Sign-in with the media server. Never read from here: it reads as
+   * `plexLogin || jellyfinLogin`, and `POST /settings/main` applies a written
+   * value to the flag of the provider that is the media server.
+   */
   mediaServerLogin: boolean;
+  plexLogin: boolean;
+  jellyfinLogin: boolean;
   newPlexLogin: boolean;
   discoverRegion: string;
   streamingRegion: string;
@@ -198,6 +207,10 @@ interface FullPublicSettings extends PublicSettings {
   hideRequested: boolean;
   localLogin: boolean;
   mediaServerLogin: boolean;
+  plexLogin: boolean;
+  jellyfinLogin: boolean;
+  plexLinkEnabled: boolean;
+  jellyfinLinkEnabled: boolean;
   movie4kEnabled: boolean;
   series4kEnabled: boolean;
   discoverRegion: string;
@@ -422,6 +435,8 @@ class Settings {
         hideRequested: false,
         localLogin: true,
         mediaServerLogin: true,
+        plexLogin: true,
+        jellyfinLogin: true,
         newPlexLogin: true,
         discoverRegion: '',
         streamingRegion: '',
@@ -710,6 +725,138 @@ class Settings {
     this.data.public = mergeSettings(this.data.public, data);
   }
 
+  /** Whether Plex is the media backend rather than only an auth provider. */
+  get plexIsPrimary(): boolean {
+    return isPlexPrimary(this.data.main.mediaServerType);
+  }
+
+  /** Whether Jellyfin/Emby is the media backend rather than only an auth provider. */
+  get jellyfinIsPrimary(): boolean {
+    return isJellyfinPrimary(this.data.main.mediaServerType);
+  }
+
+  /** Whether a Plex server connection has been set up. */
+  get plexConfigured(): boolean {
+    return !!this.data.plex.machineId || !!this.data.plex.ip;
+  }
+
+  /** Whether a Jellyfin/Emby server connection has been set up. */
+  get jellyfinConfigured(): boolean {
+    return !!this.data.jellyfin.ip;
+  }
+
+  /**
+   * Whether the configured Jellyfin connection is a Jellyfin or an Emby server.
+   */
+  get jellyfinServerType(): MediaServerType.JELLYFIN | MediaServerType.EMBY {
+    // Only Jellyfin can be a secondary provider; Emby is supported as the
+    // media backend alone.
+    return this.data.main.mediaServerType === MediaServerType.EMBY
+      ? MediaServerType.EMBY
+      : MediaServerType.JELLYFIN;
+  }
+
+  /** The user type that an account on the configured Jellyfin/Emby server gets. */
+  get jellyfinUserType(): UserType.JELLYFIN | UserType.EMBY {
+    return this.jellyfinServerType === MediaServerType.EMBY
+      ? UserType.EMBY
+      : UserType.JELLYFIN;
+  }
+
+  /** Whether users may sign in with Plex. */
+  get plexLoginEnabled(): boolean {
+    return this.plexLoginEnabledFor(this.data.main);
+  }
+
+  /** Whether users may sign in with Jellyfin/Emby. */
+  get jellyfinLoginEnabled(): boolean {
+    return this.jellyfinLoginEnabledFor(this.data.main);
+  }
+
+  /**
+   * Whether `main` would still leave a way to sign in: local sign-in, or a
+   * provider that is both switched on and usable. A provider flag alone is not
+   * enough, since a provider without a connection cannot be signed in with.
+   * Mid-setup, sign-in stays open regardless.
+   */
+  public allowsSignIn(main: MainSettings): boolean {
+    return (
+      main.mediaServerType === MediaServerType.NOT_CONFIGURED ||
+      main.localLogin ||
+      this.plexLoginEnabledFor(main) ||
+      this.jellyfinLoginEnabledFor(main)
+    );
+  }
+
+  /**
+   * Whether Plex sign-in is switched on and usable under `main`: a connection
+   * is set up, or Plex is the media backend, in which case sign-in keeps
+   * working during setup before a server has been picked.
+   */
+  private plexLoginEnabledFor(main: MainSettings): boolean {
+    return (
+      main.plexLogin &&
+      (this.plexConfigured || isPlexPrimary(main.mediaServerType))
+    );
+  }
+
+  /** Whether Jellyfin/Emby sign-in is switched on and usable; see Plex's. */
+  private jellyfinLoginEnabledFor(main: MainSettings): boolean {
+    return (
+      main.jellyfinLogin &&
+      (this.jellyfinConfigured || isJellyfinPrimary(main.mediaServerType))
+    );
+  }
+
+  /** Whether users may sign in with Jellyfin Quick Connect (Emby lacks it). */
+  get jellyfinQuickConnectEnabled(): boolean {
+    return (
+      this.jellyfinServerType === MediaServerType.JELLYFIN &&
+      this.jellyfinLoginEnabled
+    );
+  }
+
+  /**
+   * Whether Quick Connect codes may be requested at all. Linking an account
+   * from a profile goes through the same initiate/check flow as signing in,
+   * and linking stays open on the primary server even while Jellyfin sign-in
+   * is switched off.
+   */
+  get jellyfinQuickConnectAvailable(): boolean {
+    return (
+      this.jellyfinServerType === MediaServerType.JELLYFIN &&
+      this.jellyfinLinkEnabled
+    );
+  }
+
+  /**
+   * Whether a user may link a Plex account.
+   *
+   * Deliberately weaker than `plexLoginEnabled`: configuring a Plex server
+   * needs the admin's Plex token, and linking is the only way to obtain one, so
+   * requiring a configured server here would make Plex impossible to add as a
+   * secondary provider at all. On the primary server linking stays available
+   * regardless of the sign-in switch, since a Plex token also drives watchlist
+   * sync.
+   */
+  get plexLinkEnabled(): boolean {
+    return this.plexIsPrimary || this.data.main.plexLogin;
+  }
+
+  /** Whether a user may link a Jellyfin/Emby account. */
+  get jellyfinLinkEnabled(): boolean {
+    return this.jellyfinIsPrimary || this.jellyfinLoginEnabled;
+  }
+
+  /**
+   * The single media-server sign-in switch, derived from the two
+   * per-provider ones. Never persisted — deriving it on read is what keeps
+   * every consumer seeing the same answer.
+   */
+  get mediaServerLoginEnabled(): boolean {
+    return this.plexLoginEnabled || this.jellyfinLoginEnabled;
+  }
+
   get fullPublicSettings(): FullPublicSettings {
     return {
       ...this.data.public,
@@ -719,7 +866,11 @@ class Settings {
       hideBlocklisted: this.data.main.hideBlocklisted,
       hideRequested: this.data.main.hideRequested,
       localLogin: this.data.main.localLogin,
-      mediaServerLogin: this.data.main.mediaServerLogin,
+      mediaServerLogin: this.mediaServerLoginEnabled,
+      plexLogin: this.plexLoginEnabled,
+      jellyfinLogin: this.jellyfinLoginEnabled,
+      plexLinkEnabled: this.plexLinkEnabled,
+      jellyfinLinkEnabled: this.jellyfinLinkEnabled,
       jellyfinExternalHost: this.data.jellyfin.externalHostname,
       jellyfinForgotPasswordUrl: this.data.jellyfin.jellyfinForgotPasswordUrl,
       movie4kEnabled: this.data.radarr.some(

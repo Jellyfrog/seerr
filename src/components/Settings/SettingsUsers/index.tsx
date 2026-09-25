@@ -32,6 +32,8 @@ const messages = defineMessages('components.Settings.SettingsUsers', {
   mediaServerLogin: 'Enable {mediaServerName} Sign-In',
   mediaServerLoginTip:
     'Allow users to sign in using their {mediaServerName} account',
+  mediaServerLoginTipSecondary:
+    '{mediaServerName} is not the media server, so only users who have linked their {mediaServerName} account from their profile will be able to sign in.',
   atLeastOneAuth: 'At least one authentication method must be selected.',
   newPlexLogin: 'Enable New {mediaServerName} Sign-In',
   newPlexLoginTip:
@@ -59,12 +61,17 @@ const SettingsUsers = () => {
     .shape({
       localLogin: yup.boolean(),
       mediaServerLogin: yup.boolean(),
+      secondaryLogin: yup.boolean(),
     })
     .test({
       name: 'atLeastOneAuth',
       test: function (values) {
         const isValid = (
-          ['localLogin', 'mediaServerLogin'] as (keyof typeof values)[]
+          [
+            'localLogin',
+            'mediaServerLogin',
+            'secondaryLogin',
+          ] as (keyof typeof values)[]
         ).some((field) => !!values[field]);
 
         if (isValid) return true;
@@ -78,6 +85,14 @@ const SettingsUsers = () => {
   if (!data && !error) {
     return <LoadingSpinner />;
   }
+
+  // mediaServerLogin is the media server's own sign-in, which the API applies
+  // to that provider; the other provider can be enabled for sign-in next to it.
+  const plexIsPrimary =
+    settings.currentSettings.mediaServerType === MediaServerType.PLEX;
+  const primaryLoginKey = plexIsPrimary ? 'plexLogin' : 'jellyfinLogin';
+  const secondaryLoginKey = plexIsPrimary ? 'jellyfinLogin' : 'plexLogin';
+  const secondaryServerName = plexIsPrimary ? 'Jellyfin' : 'Plex';
 
   const mediaServerFormatValues = {
     mediaServerName:
@@ -108,7 +123,8 @@ const SettingsUsers = () => {
         <Formik
           initialValues={{
             localLogin: data?.localLogin,
-            mediaServerLogin: data?.mediaServerLogin,
+            mediaServerLogin: data?.[primaryLoginKey],
+            secondaryLogin: data?.[secondaryLoginKey],
             newPlexLogin: data?.newPlexLogin,
             movieQuotaLimit: data?.defaultQuotas.movie.quotaLimit ?? 0,
             movieQuotaDays: data?.defaultQuotas.movie.quotaDays ?? 7,
@@ -123,6 +139,7 @@ const SettingsUsers = () => {
               await axios.post('/api/v1/settings/main', {
                 localLogin: values.localLogin,
                 mediaServerLogin: values.mediaServerLogin,
+                [secondaryLoginKey]: values.secondaryLogin,
                 newPlexLogin: values.newPlexLogin,
                 defaultQuotas: {
                   movie: {
@@ -200,6 +217,23 @@ const SettingsUsers = () => {
                           setFieldValue(
                             'mediaServerLogin',
                             !values.mediaServerLogin
+                          )
+                        }
+                      />
+                      <LabeledCheckbox
+                        id="secondaryLogin"
+                        className="mt-4"
+                        label={intl.formatMessage(messages.mediaServerLogin, {
+                          mediaServerName: secondaryServerName,
+                        })}
+                        description={intl.formatMessage(
+                          messages.mediaServerLoginTipSecondary,
+                          { mediaServerName: secondaryServerName }
+                        )}
+                        onChange={() =>
+                          setFieldValue(
+                            'secondaryLogin',
+                            !values.secondaryLogin
                           )
                         }
                       />

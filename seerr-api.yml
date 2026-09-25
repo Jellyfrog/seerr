@@ -241,6 +241,20 @@ components:
         localLogin:
           type: boolean
           example: true
+        plexLogin:
+          type: boolean
+          description: Whether users may sign in with Plex
+          example: true
+        jellyfinLogin:
+          type: boolean
+          description: Whether users may sign in with Jellyfin/Emby
+          example: true
+        mediaServerLogin:
+          type: boolean
+          description: >-
+            Sign-in with the media server. Reads as `plexLogin || jellyfinLogin`;
+            writing it sets the flag of the provider that is the media server.
+          example: true
         mediaServerType:
           type: number
           example: 1

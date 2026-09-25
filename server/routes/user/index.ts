@@ -785,9 +785,9 @@ router.post(
             permissions: settings.main.defaultPermissions,
             avatar: `/avatarproxy/${jellyfinUser?.Id}`,
             userType:
-              settings.main.mediaServerType === MediaServerType.JELLYFIN
-                ? UserType.JELLYFIN
-                : UserType.EMBY,
+              settings.main.mediaServerType === MediaServerType.EMBY
+                ? UserType.EMBY
+                : UserType.JELLYFIN,
           });
 
           await userRepository.save(newUser);
