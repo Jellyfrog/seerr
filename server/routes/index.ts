@@ -34,6 +34,8 @@ import collectionRoutes from './collection';
 import discoverRoutes, { createTmdbWithRegionLanguage } from './discover';
 import issueRoutes from './issue';
 import issueCommentRoutes from './issueComment';
+import jellyfinSignInAuthRoutes from './jellyfinSignIn/auth';
+import jellyfinSignInUserRoutes from './jellyfinSignIn/user';
 import mediaRoutes from './media';
 import movieRoutes from './movie';
 import personRoutes from './person';
@@ -109,6 +111,7 @@ router.get('/status/appdata', (_req, res) => {
   });
 });
 
+router.use('/user', isAuthenticated(), jellyfinSignInUserRoutes);
 router.use('/user', isAuthenticated(), user);
 router.get('/settings/public', async (req, res) => {
   const settings = getSettings();
@@ -177,6 +180,7 @@ router.use('/collection', isAuthenticated(), collectionRoutes);
 router.use('/service', isAuthenticated(), serviceRoutes);
 router.use('/issue', isAuthenticated(), issueRoutes);
 router.use('/issueComment', isAuthenticated(), issueCommentRoutes);
+router.use('/auth', jellyfinSignInAuthRoutes);
 router.use('/auth', authRoutes);
 router.use('/overrideRule', isAuthenticated(), overrideRuleRoutes);
 

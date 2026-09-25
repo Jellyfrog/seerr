@@ -8,6 +8,7 @@ import Modal from '@app/components/Common/Modal';
 import PageTitle from '@app/components/Common/PageTitle';
 import SensitiveInput from '@app/components/Common/SensitiveInput';
 import Table from '@app/components/Common/Table';
+import JellyfinSignInImportButton from '@app/components/JellyfinSignIn/ImportButton';
 import BulkEditModal from '@app/components/UserList/BulkEditModal';
 import PlexImportModal from '@app/components/UserList/PlexImportModal';
 import useDebouncedState from '@app/hooks/useDebouncedState';
@@ -677,6 +678,10 @@ const UserList = () => {
                       })}
               </span>
             </Button>
+            <JellyfinSignInImportButton
+              userCount={data.pageInfo.results}
+              onComplete={revalidate}
+            />
           </div>
           <div className="mb-2 flex flex-grow flex-col gap-2 sm:flex-row lg:mb-0 lg:flex-grow-0">
             <div className="flex flex-grow lg:flex-grow-0">

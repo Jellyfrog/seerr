@@ -1,3 +1,4 @@
+import JellyfinSignInSettings from '@app/components/JellyfinSignIn/SettingsNotice';
 import SettingsJellyfin from '@app/components/Settings/SettingsJellyfin';
 import SettingsLayout from '@app/components/Settings/SettingsLayout';
 import useRouteGuard from '@app/hooks/useRouteGuard';
@@ -8,6 +9,7 @@ const JellyfinSettingsPage: NextPage = () => {
   useRouteGuard(Permission.MANAGE_SETTINGS);
   return (
     <SettingsLayout>
+      <JellyfinSignInSettings />
       <SettingsJellyfin />
     </SettingsLayout>
   );

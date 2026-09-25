@@ -1,3 +1,4 @@
+import JellyfinSignInLinkedAccount from '@app/components/JellyfinSignIn/LinkedAccount';
 import UserSettings from '@app/components/UserProfile/UserSettings';
 import UserLinkedAccountsSettings from '@app/components/UserProfile/UserSettings/UserLinkedAccountsSettings';
 import useRouteGuard from '@app/hooks/useRouteGuard';
@@ -9,6 +10,7 @@ const UserLinkedAccountsPage: NextPage = () => {
   return (
     <UserSettings>
       <UserLinkedAccountsSettings />
+      <JellyfinSignInLinkedAccount />
     </UserSettings>
   );
 };

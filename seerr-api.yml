@@ -4088,6 +4088,27 @@ paths:
               required:
                 - username
                 - password
+  /auth/jellyfin/secondary:
+    get:
+      summary: Check whether Jellyfin sign-in is available next to Plex
+      description: |
+        Whether users may sign in with a linked Jellyfin account while Plex is
+        the media server. When it is, `/auth/jellyfin` and the Quick Connect
+        routes sign in linked users only; unlinked accounts get 403.
+      security: []
+      tags:
+        - auth
+      responses:
+        '200':
+          description: Jellyfin sign-in availability
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                    example: true
   /auth/jellyfin/quickconnect/initiate:
     post:
       summary: Initiate Jellyfin Quick Connect

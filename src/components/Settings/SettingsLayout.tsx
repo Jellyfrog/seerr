@@ -50,6 +50,15 @@ const SettingsLayout = ({ children }: SettingsLayoutProps) => {
           route: '/settings/jellyfin',
           regex: /^\/settings\/jellyfin/,
         },
+    // Jellyfin as a sign-in provider next to a Plex media server.
+    {
+      text: intl.formatMessage(messages.menuJellyfinSettings, {
+        mediaServerName: 'Jellyfin',
+      }),
+      route: '/settings/jellyfin',
+      regex: /^\/settings\/jellyfin/,
+      hidden: settings.currentSettings.mediaServerType !== MediaServerType.PLEX,
+    },
     {
       text: intl.formatMessage(messages.menuServices),
       route: '/settings/services',

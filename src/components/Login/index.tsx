@@ -4,10 +4,12 @@ import PlexLogo from '@app/assets/services/plex.svg';
 import Button from '@app/components/Common/Button';
 import ImageFader from '@app/components/Common/ImageFader';
 import PageTitle from '@app/components/Common/PageTitle';
+import JellyfinSignInButton from '@app/components/JellyfinSignIn/LoginButton';
 import LanguagePicker from '@app/components/Layout/LanguagePicker';
 import JellyfinLogin from '@app/components/Login/JellyfinLogin';
 import LocalLogin from '@app/components/Login/LocalLogin';
 import PlexLoginButton from '@app/components/Login/PlexLoginButton';
+import useJellyfinSignIn from '@app/hooks/useJellyfinSignIn';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
@@ -36,6 +38,7 @@ const Login = () => {
   const router = useRouter();
   const settings = useSettings();
   const { user, revalidate } = useUser();
+  const jellyfinSignIn = useJellyfinSignIn();
 
   const [error, setError] = useState('');
   const [isProcessing, setProcessing] = useState(false);
@@ -147,6 +150,9 @@ const Login = () => {
           </Button>
         ))
       )),
+    jellyfinSignIn.enabled && (
+      <JellyfinSignInButton key="jellyfin-signin" revalidate={revalidate} />
+    ),
   ].filter((o): o is JSX.Element => !!o);
 
   return (
