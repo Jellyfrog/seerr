@@ -17,6 +17,7 @@ import type {
   UserWatchDataResponse,
 } from '@server/interfaces/api/userInterfaces';
 import { Permission, hasPermission } from '@server/lib/permissions';
+import { findPlexUserMatch } from '@server/lib/plexUserMatch';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { isAuthenticated } from '@server/middleware/auth';
@@ -674,13 +675,16 @@ router.post(
         const account = rawUser.$;
 
         if (account.email) {
-          const user = await userRepository
-            .createQueryBuilder('user')
-            .where('user.plexId = :id', { id: account.id })
-            .orWhere('user.email = :email', {
-              email: account.email.toLowerCase(),
-            })
-            .getOne();
+          const { user, emailOnly } = await findPlexUserMatch({
+            id: parseInt(account.id),
+            email: account.email,
+          });
+
+          // The email belongs to a user with another media server account, so
+          // it proves nothing: leave their identity alone, as Plex sign-in does.
+          if (emailOnly) {
+            continue;
+          }
 
           if (user) {
             // Update the user's avatar with their Plex thumbnail, in case it changed

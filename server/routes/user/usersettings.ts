@@ -1,7 +1,6 @@
 import JellyfinAPI from '@server/api/jellyfin';
 import PlexTvAPI from '@server/api/plextv';
 import { ApiErrorCode } from '@server/constants/error';
-import { MediaServerType } from '@server/constants/server';
 import { UserType } from '@server/constants/user';
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
@@ -27,6 +26,25 @@ import { Not } from 'typeorm';
 import { canMakePermissionsChange } from '.';
 
 const userSettingsRoutes = Router({ mergeParams: true });
+
+/**
+ * Whether the user would still be able to sign in after unlinking `provider`.
+ * A local password counts, and so does an account on the other provider.
+ */
+const hasRemainingLoginMethod = (
+  user: User,
+  provider: 'plex' | 'jellyfin'
+): boolean => {
+  if (user.email && user.password) {
+    return true;
+  }
+
+  const settings = getSettings();
+
+  return provider === 'plex'
+    ? !!user.jellyfinUserId && settings.jellyfinLoginEnabled
+    : !!user.plexId && settings.plexLoginEnabled;
+};
 
 userSettingsRoutes.get<{ id: string }, UserSettingsGeneralResponse>(
   '/main',
@@ -96,7 +114,10 @@ userSettingsRoutes.post<
 
     const oldEmail = user.email;
     user.username = req.body.username;
-    if (user.userType !== UserType.PLEX) {
+    // Plex owns the email only where Plex sign-in rewrites it, which is on a
+    // Plex media server. A user whose type is PLEX because Plex is merely their
+    // only account on a Jellyfin/Emby install must still be able to change it.
+    if (user.userType !== UserType.PLEX || !getSettings().plexIsPrimary) {
       user.email = req.body.email || user.jellyfinUsername || user.email;
     }
 
@@ -272,8 +293,7 @@ userSettingsRoutes.post<{ authToken: string }>(
     if (!req.user) {
       return res.status(404).json({ code: ApiErrorCode.Unauthorized });
     }
-    // Make sure Plex login is enabled
-    if (!settings.plexIsPrimary) {
+    if (!settings.plexLinkEnabled) {
       return res.status(500).json({ message: 'Plex login is disabled' });
     }
 
@@ -290,9 +310,11 @@ userSettingsRoutes.post<{ authToken: string }>(
 
     const user = req.user;
 
-    // Emails do not match. Stored emails are lowercased, so compare them that
-    // way.
-    if (user.email !== account.email.toLowerCase()) {
+    // On a Plex media server, Plex sign-in rewrites the user's email from
+    // plex.tv, so the two must already agree. As a secondary provider Plex
+    // never touches the email, which belongs to the primary identity. Stored
+    // emails are lowercased, so compare them that way.
+    if (settings.plexIsPrimary && user.email !== account.email.toLowerCase()) {
       return res.status(422).json({
         message:
           'This Plex account is registered under a different email address.',
@@ -314,14 +336,11 @@ userSettingsRoutes.delete<{ id: string }>(
   '/linked-accounts/plex',
   isOwnProfileOrAdmin(),
   async (req, res) => {
-    const settings = getSettings();
     const userRepository = getRepository(User);
 
-    // Make sure Plex login is enabled
-    if (!settings.plexIsPrimary) {
-      return res.status(500).json({ message: 'Plex login is disabled' });
-    }
-
+    // No provider check: unlinking only clears Seerr's copy of the account and
+    // never contacts Plex. A Plex account can be linked before any Plex server
+    // is configured, so requiring one here would make that link permanent.
     try {
       const user = await userRepository
         .createQueryBuilder('user')
@@ -342,9 +361,10 @@ userSettingsRoutes.delete<{ id: string }>(
         });
       }
 
-      if (!user.email || !user.password) {
+      if (!hasRemainingLoginMethod(user, 'plex')) {
         return res.status(400).json({
-          message: 'User does not have a local email or password set.',
+          message:
+            'User has no other way to sign in: set a local password or link another enabled sign-in provider first.',
         });
       }
 
@@ -371,8 +391,7 @@ userSettingsRoutes.post<{ username: string; password: string }>(
     if (!req.user) {
       return res.status(401).json({ code: ApiErrorCode.Unauthorized });
     }
-    // Make sure jellyfin login is enabled
-    if (!settings.jellyfinIsPrimary) {
+    if (!settings.jellyfinLinkEnabled) {
       return res
         .status(500)
         .json({ message: 'Jellyfin/Emby login is disabled' });
@@ -457,16 +476,9 @@ userSettingsRoutes.delete<{ id: string }>(
   '/linked-accounts/jellyfin',
   isOwnProfileOrAdmin(),
   async (req, res) => {
-    const settings = getSettings();
     const userRepository = getRepository(User);
 
-    // Make sure jellyfin login is enabled
-    if (!settings.jellyfinIsPrimary) {
-      return res
-        .status(500)
-        .json({ message: 'Jellyfin/Emby login is disabled' });
-    }
-
+    // No provider check, as for Plex: unlinking never contacts the server.
     try {
       const user = await userRepository
         .createQueryBuilder('user')
@@ -487,9 +499,10 @@ userSettingsRoutes.delete<{ id: string }>(
         });
       }
 
-      if (!user.email || !user.password) {
+      if (!hasRemainingLoginMethod(user, 'jellyfin')) {
         return res.status(400).json({
-          message: 'User does not have a local email or password set.',
+          message:
+            'User has no other way to sign in: set a local password or link another enabled sign-in provider first.',
         });
       }
 
@@ -525,13 +538,13 @@ userSettingsRoutes.post<{ secret: string }>(
 
     const { secret } = result.data;
 
-    if (!settings.jellyfinIsPrimary) {
+    if (!settings.jellyfinLinkEnabled) {
       return res
         .status(500)
         .json({ message: 'Jellyfin/Emby login is disabled' });
     }
 
-    if (settings.jellyfinServerType !== MediaServerType.JELLYFIN) {
+    if (!settings.jellyfinQuickConnectAvailable) {
       return res
         .status(403)
         .json({ message: 'Quick Connect is only supported by Jellyfin.' });

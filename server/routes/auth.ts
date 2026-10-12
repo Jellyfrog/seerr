@@ -8,6 +8,7 @@ import { User } from '@server/entity/User';
 import { startJobs } from '@server/job/schedule';
 import { getJellyfinServerName } from '@server/lib/mediaServer';
 import { Permission } from '@server/lib/permissions';
+import { findPlexUserMatch } from '@server/lib/plexUserMatch';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { isAuthenticated } from '@server/middleware/auth';
@@ -82,10 +83,7 @@ authRoutes.post('/plex', async (req, res, next) => {
   const isInitialSetup =
     settings.main.mediaServerType === MediaServerType.NOT_CONFIGURED;
 
-  if (
-    !isInitialSetup &&
-    (settings.main.mediaServerLogin === false || !settings.plexIsPrimary)
-  ) {
+  if (!isInitialSetup && !settings.plexLoginEnabled) {
     return res.status(500).json({ error: 'Plex login is disabled' });
   }
   try {
@@ -93,14 +91,67 @@ authRoutes.post('/plex', async (req, res, next) => {
     const plextv = new PlexTvAPI(body.authToken);
     const account = await plextv.getUser();
 
+    if (!isInitialSetup && !settings.plexIsPrimary) {
+      // Plex is only an authentication provider here, so it cannot vouch for
+      // accounts we have never seen: matching one to an existing user would
+      // mean guessing on email, which belongs to the primary provider. Require
+      // the account to have been linked first.
+      const linkedUser = account.id
+        ? await userRepository
+            .createQueryBuilder('user')
+            .where('user.plexId = :id', { id: account.id })
+            .getOne()
+        : null;
+
+      if (!linkedUser) {
+        logger.warn(
+          'Failed sign-in attempt by Plex user without a linked Seerr account',
+          {
+            label: 'API',
+            ip: req.ip,
+            plexId: account.id,
+            plexUsername: account.username,
+          }
+        );
+        return next({
+          status: 403,
+          message: 'Access denied.',
+        });
+      }
+
+      // Only refresh what Plex owns. userType, avatar and email belong to the
+      // primary media server identity and must survive a secondary sign-in.
+      linkedUser.plexToken = body.authToken;
+      linkedUser.plexUsername = account.username;
+      await userRepository.save(linkedUser);
+
+      if (req.session) {
+        req.session.userId = linkedUser.id;
+      }
+
+      return res.status(200).json(linkedUser.filter());
+    }
+
     // Next let's see if the user already exists
-    let user = await userRepository
-      .createQueryBuilder('user')
-      .where('user.plexId = :id', { id: account.id })
-      .orWhere('user.email = :email', {
-        email: account.email.toLowerCase(),
-      })
-      .getOne();
+    const match = await findPlexUserMatch(account);
+    let user = match.user;
+
+    if (!isInitialSetup && match.emailOnly) {
+      logger.warn(
+        'Failed sign-in attempt by Plex user whose email belongs to a Seerr user with another media server account',
+        {
+          label: 'API',
+          ip: req.ip,
+          userId: user?.id,
+          plexId: account.id,
+          plexUsername: account.username,
+        }
+      );
+      return next({
+        status: 403,
+        message: 'Access denied.',
+      });
+    }
 
     if (!user && !(await userRepository.count())) {
       user = new User({
@@ -114,6 +165,10 @@ authRoutes.post('/plex', async (req, res, next) => {
       });
 
       settings.main.mediaServerType = MediaServerType.PLEX;
+      // Setup picks the media server, so only its sign-in is switched on, as
+      // migration 0009 does for existing installs.
+      settings.main.plexLogin = true;
+      settings.main.jellyfinLogin = false;
       await settings.save();
       startJobs();
 
@@ -265,12 +320,13 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
   const isInitialSetup =
     settings.main.mediaServerType === MediaServerType.NOT_CONFIGURED;
 
-  if (
-    !isInitialSetup &&
-    (settings.main.mediaServerLogin === false || !settings.jellyfinIsPrimary)
-  ) {
+  if (!isInitialSetup && !settings.jellyfinLoginEnabled) {
     return res.status(500).json({ error: 'Jellyfin login is disabled' });
   }
+
+  // Jellyfin can be configured purely as an authentication provider, with
+  // Plex acting as the media backend.
+  const jellyfinIsPrimary = isInitialSetup || settings.jellyfinIsPrimary;
 
   if (!body.username) {
     return res.status(500).json({ error: 'You must provide an username' });
@@ -351,6 +407,10 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
         throw new ApiError(500, ApiErrorCode.NoAdminUser);
       }
       settings.main.mediaServerType = body.serverType;
+      // Setup picks the media server, so only its sign-in is switched on; see
+      // the Plex setup branch.
+      settings.main.jellyfinLogin = true;
+      settings.main.plexLogin = false;
 
       if (missingAdminUser) {
         logger.info(
@@ -446,14 +506,35 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
           jellyfinUsername: account.User.Name,
         }
       );
-      user.avatar = getUserAvatarUrl(user);
       user.jellyfinUsername = account.User.Name;
 
-      if (user.username === account.User.Name) {
-        user.username = '';
+      // The avatar and display name follow the primary media server identity,
+      // so a secondary sign-in must not overwrite them.
+      if (jellyfinIsPrimary) {
+        user.avatar = getUserAvatarUrl(user);
+
+        if (user.username === account.User.Name) {
+          user.username = '';
+        }
       }
 
       await userRepository.save(user);
+    } else if (!jellyfinIsPrimary) {
+      // Jellyfin is only an authentication provider here, so it cannot vouch
+      // for accounts we have never seen. Require an explicit link first.
+      logger.warn(
+        'Failed sign-in attempt by Jellyfin user without a linked Seerr account',
+        {
+          label: 'API',
+          ip: req.ip,
+          jellyfinUserId: account.User.Id,
+          jellyfinUsername: account.User.Name,
+        }
+      );
+      return next({
+        status: 403,
+        message: 'Access denied.',
+      });
     } else if (!settings.main.newPlexLogin) {
       logger.warn(
         'Failed sign-in attempt by unimported Jellyfin user with access to the media server',
@@ -499,7 +580,7 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
       await userRepository.save(user);
     }
 
-    if (user && user.jellyfinUserId) {
+    if (jellyfinIsPrimary && user && user.jellyfinUserId) {
       try {
         const { changed } = await checkAvatarChanged(user);
 
@@ -633,7 +714,7 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
 authRoutes.post('/jellyfin/quickconnect/initiate', async (req, res, next) => {
   const settings = getSettings();
 
-  if (settings.main.mediaServerType !== MediaServerType.JELLYFIN) {
+  if (!settings.jellyfinQuickConnectAvailable) {
     return next({
       status: 403,
       message: 'Quick Connect is only supported by Jellyfin.',
@@ -669,7 +750,7 @@ authRoutes.post('/jellyfin/quickconnect/initiate', async (req, res, next) => {
 authRoutes.get('/jellyfin/quickconnect/check', async (req, res, next) => {
   const settings = getSettings();
 
-  if (settings.main.mediaServerType !== MediaServerType.JELLYFIN) {
+  if (!settings.jellyfinQuickConnectAvailable) {
     return next({
       status: 403,
       message: 'Quick Connect is only supported by Jellyfin.',
@@ -730,7 +811,7 @@ authRoutes.post(
       });
     }
 
-    if (settings.main.mediaServerType !== MediaServerType.JELLYFIN) {
+    if (!settings.jellyfinQuickConnectEnabled) {
       return next({
         status: 403,
         message: 'Quick Connect is only supported by Jellyfin.',
@@ -765,8 +846,26 @@ authRoutes.post(
 
         user.jellyfinAuthToken = account.AccessToken;
         user.jellyfinDeviceId = deviceId;
-        user.avatar = getUserAvatarUrl(user);
+        if (settings.jellyfinIsPrimary) {
+          user.avatar = getUserAvatarUrl(user);
+        }
         await userRepository.save(user);
+      } else if (!settings.jellyfinIsPrimary) {
+        // Jellyfin is only an authentication provider here, so it cannot
+        // vouch for accounts that have never been linked.
+        logger.warn(
+          'Failed Quick Connect sign-in attempt by Jellyfin user without a linked Seerr account',
+          {
+            label: 'API',
+            ip: req.ip,
+            jellyfinUserId: account.User.Id,
+            jellyfinUsername: account.User.Name,
+          }
+        );
+        return next({
+          status: 403,
+          message: 'Access denied.',
+        });
       } else if (!settings.main.newPlexLogin) {
         logger.warn(
           'Failed Quick Connect sign-in attempt by unimported Jellyfin user',
@@ -803,7 +902,7 @@ authRoutes.post(
         await userRepository.save(user);
       }
 
-      if (user.jellyfinUserId) {
+      if (settings.jellyfinIsPrimary && user.jellyfinUserId) {
         try {
           const { changed } = await checkAvatarChanged(user);
 
@@ -903,7 +1002,11 @@ authRoutes.post('/logout', async (req, res, next) => {
     }
 
     const settings = getSettings();
-    if (settings.jellyfinIsPrimary) {
+    // Jellyfin may be the media server or only an authentication provider.
+    const hasJellyfinConnection =
+      settings.jellyfinIsPrimary || settings.jellyfinConfigured;
+
+    if (hasJellyfinConnection) {
       const user = await getRepository(User)
         .createQueryBuilder('user')
         .addSelect(['user.jellyfinUserId', 'user.jellyfinDeviceId'])

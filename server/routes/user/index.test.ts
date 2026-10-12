@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
-import { before, describe, it } from 'node:test';
+import { before, describe, it, mock } from 'node:test';
 
+import PlexTvAPI from '@server/api/plextv';
 import { MediaStatus, MediaType } from '@server/constants/media';
+import { MediaServerType } from '@server/constants/server';
+import { UserType } from '@server/constants/user';
 import { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
 import { User } from '@server/entity/User';
@@ -143,5 +146,63 @@ describe('GET /user/:id', () => {
     assert.strictEqual(res.status, 200);
     assert.ok(!('settings' in res.body));
     assertNoCredentials(res.body);
+  });
+});
+
+describe('POST /user/import-from-plex', () => {
+  it('leaves a user with another media server account alone when only the email matches', async () => {
+    const settings = getSettings();
+    settings.main.mediaServerType = MediaServerType.PLEX;
+
+    const userRepository = getRepository(User);
+    const jellyfinUser = await userRepository.save(
+      new User({
+        email: 'shared@seerr.dev',
+        jellyfinUsername: 'jf-only',
+        jellyfinUserId: 'jf-import-user-001',
+        avatar: '/avatarproxy/jf-import-user-001',
+        userType: UserType.JELLYFIN,
+      })
+    );
+
+    const getUsersMock = mock.method(
+      PlexTvAPI.prototype,
+      'getUsers',
+      async () => ({
+        MediaContainer: {
+          User: [
+            {
+              $: {
+                id: '987654',
+                title: 'Plex Friend',
+                username: 'plexfriend',
+                email: 'Shared@seerr.dev',
+                thumb: 'https://plex.tv/users/plexfriend/avatar',
+              },
+              Server: [],
+            },
+          ],
+        },
+      })
+    );
+
+    try {
+      const admin = await loginAs('admin@seerr.dev', 'test1234');
+      const res = await admin.post('/user/import-from-plex').send({});
+
+      assert.strictEqual(res.status, 201);
+      assert.strictEqual(res.body.refreshedUsers, 0);
+      assert.strictEqual(res.body.createdUsers.length, 0);
+
+      const saved = await userRepository.findOneOrFail({
+        where: { id: jellyfinUser.id },
+      });
+      assert.strictEqual(saved.avatar, '/avatarproxy/jf-import-user-001');
+      assert.strictEqual(saved.plexUsername, null);
+      assert.strictEqual(saved.plexId, null);
+      assert.strictEqual(saved.userType, UserType.JELLYFIN);
+    } finally {
+      getUsersMock.mock.restore();
+    }
   });
 });

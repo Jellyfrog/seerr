@@ -55,6 +55,8 @@ export async function initDemoData(server: Express): Promise<void> {
   const settings = getSettings();
   await settings.load();
   settings.main.mediaServerLogin = false;
+  settings.main.plexLogin = false;
+  settings.main.jellyfinLogin = false;
   await settings.save();
   // Seed the database with demo data
   await resetDemoData();

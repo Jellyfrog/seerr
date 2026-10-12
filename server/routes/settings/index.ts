@@ -18,6 +18,7 @@ import { scheduledJobs } from '@server/job/schedule';
 import type { AvailableCacheIds } from '@server/lib/cache';
 import cacheManager from '@server/lib/cache';
 import ImageProxy from '@server/lib/imageproxy';
+import { isJellyfinPrimary, isPlexPrimary } from '@server/lib/mediaServer';
 import { Permission } from '@server/lib/permissions';
 import { jellyfinFullScanner } from '@server/lib/scanners/jellyfin';
 import { plexFullScanner } from '@server/lib/scanners/plex';
@@ -59,14 +60,21 @@ const libraryUpdateSchema = z.object({
 });
 
 const filteredMainSettings = (
-  user: User,
+  user: User | undefined,
   main: MainSettings
 ): Partial<MainSettings> => {
+  // Derived rather than stored, so that every consumer of the single flag
+  // sees the same answer as /settings/public.
+  const settings = {
+    ...main,
+    mediaServerLogin: getSettings().mediaServerLoginEnabled,
+  };
+
   if (!user?.hasPermission(Permission.ADMIN)) {
-    return omit(main, 'apiKey');
+    return omit(settings, 'apiKey');
   }
 
-  return main;
+  return settings;
 };
 
 settingsRoutes.get('/main', (req, res, next) => {
@@ -79,13 +87,55 @@ settingsRoutes.get('/main', (req, res, next) => {
   res.status(200).json(filteredMainSettings(req.user, settings.main));
 });
 
-settingsRoutes.post('/main', async (req, res) => {
-  const settings = getSettings();
+/** Main settings that decide whether, and how, anyone can sign in. */
+const SIGN_IN_SETTINGS = [
+  'localLogin',
+  'plexLogin',
+  'jellyfinLogin',
+  'mediaServerLogin',
+  'mediaServerType',
+] as const;
 
-  settings.main = merge(settings.main, req.body);
+settingsRoutes.post('/main', async (req, res, next) => {
+  const settings = getSettings();
+  const body = { ...req.body };
+
+  // The single media server switch (sent by the settings page and older
+  // clients) governs the media server's own sign-in, so apply it to that
+  // provider: the stored copy is never read.
+  if (typeof body.mediaServerLogin === 'boolean') {
+    const mediaServerType =
+      body.mediaServerType ?? settings.main.mediaServerType;
+
+    if (isPlexPrimary(mediaServerType) && body.plexLogin === undefined) {
+      body.plexLogin = body.mediaServerLogin;
+    } else if (
+      isJellyfinPrimary(mediaServerType) &&
+      body.jellyfinLogin === undefined
+    ) {
+      body.jellyfinLogin = body.mediaServerLogin;
+    }
+  }
+
+  const updated: MainSettings = merge({}, settings.main, body);
+
+  // The per-provider flags can be on for a provider that has no connection,
+  // so checking the flags alone would let an admin save a configuration that
+  // nobody, the owner included, can sign in with.
+  if (
+    SIGN_IN_SETTINGS.some((key) => key in body) &&
+    !settings.allowsSignIn(updated)
+  ) {
+    return next({
+      status: 400,
+      message: 'At least one sign-in method must remain available.',
+    });
+  }
+
+  settings.main = updated;
   await settings.save();
 
-  return res.status(200).json(settings.main);
+  return res.status(200).json(filteredMainSettings(req.user, settings.main));
 });
 
 settingsRoutes.get('/network', (req, res) => {
@@ -130,7 +180,9 @@ settingsRoutes.post('/plex', async (req, res, next) => {
       where: { id: 1 },
     });
 
-    // Test the connection before touching the live settings, as for Jellyfin.
+    // Test the connection before touching the live settings, as for Jellyfin:
+    // a connection that failed its test must not count as configured, since
+    // that is what makes Plex sign-in usable as a secondary provider.
     const plexClient = new PlexAPI({
       plexToken: admin.plexToken,
       plexSettings: { ...settings.plex, ...req.body },

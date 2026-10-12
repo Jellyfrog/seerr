@@ -15,7 +15,9 @@ export const isJellyfinPrimary = (mediaServerType: MediaServerType): boolean =>
   mediaServerType === MediaServerType.EMBY;
 
 /**
- * Whether the Jellyfin/Emby connection is a Jellyfin or an Emby server.
+ * Whether the Jellyfin/Emby connection is a Jellyfin or an Emby server. Only
+ * Jellyfin can be a secondary sign-in provider, so it is Emby exactly when
+ * Emby is the media server.
  */
 export const getJellyfinServerType = (
   mediaServerType: MediaServerType

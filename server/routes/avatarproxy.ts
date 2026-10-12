@@ -23,6 +23,8 @@ function initAvatarImageProxy() {
 
 function getJellyfinAvatarUrl(userId: string) {
   const settings = getSettings();
+  // Not `main.mediaServerType`: next to a Plex media server the connection is
+  // still a Jellyfin one, used for sign-in only.
   return settings.jellyfinServerType === MediaServerType.JELLYFIN
     ? `${getHostname()}/UserImage?UserId=${userId}`
     : `${getHostname()}/Users/${userId}/Images/Primary?quality=90`;

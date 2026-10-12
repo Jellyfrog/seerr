@@ -68,7 +68,8 @@ class PlexScanner
   public async run(): Promise<void> {
     const settings = getSettings();
 
-    // Only the media server's libraries decide availability.
+    // Plex may be configured purely as a sign-in provider next to a
+    // Jellyfin/Emby media server; its libraries must not decide availability.
     if (!settings.plexIsPrimary) {
       return;
     }
