@@ -130,9 +130,11 @@ settingsRoutes.post('/plex', async (req, res, next) => {
       where: { id: 1 },
     });
 
-    Object.assign(settings.plex, req.body);
-
-    const plexClient = new PlexAPI({ plexToken: admin.plexToken });
+    // Test the connection before touching the live settings, as for Jellyfin.
+    const plexClient = new PlexAPI({
+      plexToken: admin.plexToken,
+      plexSettings: { ...settings.plex, ...req.body },
+    });
 
     const result = await plexClient.getStatus();
 
@@ -140,6 +142,7 @@ settingsRoutes.post('/plex', async (req, res, next) => {
       throw new Error('Server not found');
     }
 
+    Object.assign(settings.plex, req.body);
     settings.plex.machineId = result.MediaContainer.machineIdentifier;
     settings.plex.name = result.MediaContainer.friendlyName;
 

@@ -67,6 +67,12 @@ class PlexScanner
 
   public async run(): Promise<void> {
     const settings = getSettings();
+
+    // Only the media server's libraries decide availability.
+    if (!settings.plexIsPrimary) {
+      return;
+    }
+
     const sessionId = this.startRun();
     try {
       const userRepository = getRepository(User);

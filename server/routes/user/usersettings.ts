@@ -290,8 +290,9 @@ userSettingsRoutes.post<{ authToken: string }>(
 
     const user = req.user;
 
-    // Emails do not match
-    if (user.email !== account.email) {
+    // Emails do not match. Stored emails are lowercased, so compare them that
+    // way.
+    if (user.email !== account.email.toLowerCase()) {
       return res.status(422).json({
         message:
           'This Plex account is registered under a different email address.',
