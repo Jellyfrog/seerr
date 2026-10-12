@@ -241,6 +241,19 @@ components:
         localLogin:
           type: boolean
           example: true
+        plexLogin:
+          type: boolean
+          description: Whether users may sign in with Plex
+          example: true
+        jellyfinLogin:
+          type: boolean
+          description: Whether users may sign in with Jellyfin/Emby
+          example: true
+        mediaServerLogin:
+          type: boolean
+          deprecated: true
+          description: Derived from `plexLogin || jellyfinLogin`
+          example: true
         mediaServerType:
           type: number
           example: 1
@@ -521,6 +534,13 @@ components:
         serverID:
           type: string
           readOnly: true
+        serverType:
+          type: number
+          description: >-
+            Whether this connection points at a Jellyfin (2) or an Emby (3)
+            server. Only writable while Jellyfin/Emby is not the media server,
+            in which case the media server type decides.
+          example: 2
     MetadataSettings:
       type: object
       properties:
@@ -4426,6 +4446,10 @@ paths:
       description: |
         Fetches and imports users from the Jellyfin server.
 
+        Users listed in `links` are attached to an existing Seerr user instead
+        of getting a new one. Linking to the owner or to an admin requires the
+        owner account. If any link is invalid, nothing is linked.
+
         Requires the `MANAGE_USERS` permission.
       tags:
         - users
@@ -4440,15 +4464,35 @@ paths:
                   type: array
                   items:
                     type: string
+                links:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      jellyfinUserId:
+                        type: string
+                      userId:
+                        type: number
+                    required:
+                      - jellyfinUserId
+                      - userId
       responses:
         '201':
-          description: A list of the newly created users
+          description: A list of the linked and newly created users
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: '#/components/schemas/User'
+        '400':
+          description: A link names an unknown Jellyfin user or repeats an account
+        '403':
+          description: A link targets the owner or an admin, and the requester is not the owner
+        '404':
+          description: A link targets a user that does not exist
+        '422':
+          description: A link targets an account or user that is already linked
   /user/registerPushSubscription:
     post:
       summary: Register a web push /user/registerPushSubscription

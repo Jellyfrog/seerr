@@ -1,3 +1,4 @@
+import type { MediaServerType } from '@server/constants/server';
 import type { DnsEntries, DnsStats } from 'dns-caching';
 import type { PaginatedResponse } from './common';
 
@@ -33,7 +34,13 @@ export interface PublicSettingsResponse {
   hideBlocklisted: boolean;
   hideRequested: boolean;
   localLogin: boolean;
+  /** @deprecated Derived from `plexLogin || jellyfinLogin`. */
   mediaServerLogin: boolean;
+  plexLogin: boolean;
+  jellyfinLogin: boolean;
+  plexLinkEnabled: boolean;
+  jellyfinLinkEnabled: boolean;
+  jellyfinServerType: MediaServerType.JELLYFIN | MediaServerType.EMBY;
   movie4kEnabled: boolean;
   series4kEnabled: boolean;
   discoverRegion: string;

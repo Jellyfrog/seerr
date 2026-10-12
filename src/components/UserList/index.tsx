@@ -18,6 +18,7 @@ import type { User } from '@app/hooks/useUser';
 import { Permission, UserType, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
+import { getJellyfinServerName, isPlexPrimary } from '@app/utils/mediaServer';
 import { Transition } from '@headlessui/react';
 import {
   BarsArrowDownIcon,
@@ -31,7 +32,6 @@ import {
   PencilIcon,
   UserPlusIcon,
 } from '@heroicons/react/24/solid';
-import { MediaServerType } from '@server/constants/server';
 import type { UserResultsResponse } from '@server/interfaces/api/userInterfaces';
 import { hasPermission } from '@server/lib/permissions';
 import axios from 'axios';
@@ -113,6 +113,19 @@ const UserList = () => {
   const settings = useSettings();
   const { addToast } = useToasts();
   const { user: currentUser, hasPermission: currentHasPermission } = useUser();
+  const plexIsPrimary = isPlexPrimary(settings.currentSettings.mediaServerType);
+  const jellyfinServerName = getJellyfinServerName(
+    settings.currentSettings.jellyfinServerType
+  );
+  // The primary server's import, plus Jellyfin's when it is a secondary
+  // sign-in provider: its users are imported into, or linked with, the
+  // Plex-backed user list.
+  const importTargets: ('plex' | 'jellyfin')[] = [
+    plexIsPrimary ? 'plex' : 'jellyfin',
+    ...(plexIsPrimary && settings.currentSettings.jellyfinLogin
+      ? (['jellyfin'] as const)
+      : []),
+  ];
   const [currentSort, setCurrentSort] = useState<Sort>('created');
   const [currentPageSize, setCurrentPageSize] = useState<number>(10);
   const [searchInput, searchQuery, setSearchInput] = useDebouncedState<string>(
@@ -158,7 +171,14 @@ const UserList = () => {
   };
 
   const [isDeleting, setDeleting] = useState(false);
-  const [showImportModal, setShowImportModal] = useState(false);
+  // The target outlives the open flag, so the modal keeps its content while
+  // it fades out instead of swapping to the other provider's modal.
+  const [importModal, setImportModal] = useState<{
+    isOpen: boolean;
+    target: 'plex' | 'jellyfin';
+  }>({ isOpen: false, target: 'plex' });
+  const closeImportModal = () =>
+    setImportModal((modal) => ({ ...modal, isOpen: false }));
   const [deleteModal, setDeleteModal] = useState<{
     isOpen: boolean;
     user?: User;
@@ -620,26 +640,24 @@ const UserList = () => {
         leave="transition-opacity duration-300"
         leaveFrom="opacity-100"
         leaveTo="opacity-0"
-        show={showImportModal}
+        show={importModal.isOpen}
       >
-        {settings.currentSettings.mediaServerType === MediaServerType.PLEX ? (
+        {importModal.target === 'plex' ? (
           <PlexImportModal
-            onCancel={() => setShowImportModal(false)}
+            onCancel={closeImportModal}
             onComplete={() => {
-              setShowImportModal(false);
+              closeImportModal();
               revalidate();
             }}
           />
         ) : (
           <JellyfinImportModal
-            onCancel={() => setShowImportModal(false)}
+            onCancel={closeImportModal}
             onComplete={() => {
-              setShowImportModal(false);
+              closeImportModal();
               revalidate();
             }}
-          >
-            {data.pageInfo.results}
-          </JellyfinImportModal>
+          />
         )}
       </Transition>
 
@@ -655,28 +673,22 @@ const UserList = () => {
               <UserPlusIcon />
               <span>{intl.formatMessage(messages.createlocaluser)}</span>
             </Button>
-            <Button
-              className="flex-grow lg:mr-2"
-              buttonType="primary"
-              onClick={() => setShowImportModal(true)}
-            >
-              <InboxArrowDownIcon />
-              <span>
-                {settings.currentSettings.mediaServerType ===
-                MediaServerType.EMBY
-                  ? intl.formatMessage(messages.importfrommediaserver, {
-                      mediaServerName: 'Emby',
-                    })
-                  : settings.currentSettings.mediaServerType ===
-                      MediaServerType.PLEX
-                    ? intl.formatMessage(messages.importfrommediaserver, {
-                        mediaServerName: 'Plex',
-                      })
-                    : intl.formatMessage(messages.importfrommediaserver, {
-                        mediaServerName: 'Jellyfin',
-                      })}
-              </span>
-            </Button>
+            {importTargets.map((target, i) => (
+              <Button
+                key={target}
+                className={`flex-grow lg:mr-2 ${i > 0 ? 'mt-2 sm:mt-0' : ''}`}
+                buttonType="primary"
+                onClick={() => setImportModal({ isOpen: true, target })}
+              >
+                <InboxArrowDownIcon />
+                <span>
+                  {intl.formatMessage(messages.importfrommediaserver, {
+                    mediaServerName:
+                      target === 'plex' ? 'Plex' : jellyfinServerName,
+                  })}
+                </span>
+              </Button>
+            ))}
           </div>
           <div className="mb-2 flex flex-grow flex-col gap-2 sm:flex-row lg:mb-0 lg:flex-grow-0">
             <div className="flex flex-grow lg:flex-grow-0">

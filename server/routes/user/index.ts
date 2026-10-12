@@ -2,7 +2,6 @@ import JellyfinAPI from '@server/api/jellyfin';
 import PlexTvAPI from '@server/api/plextv';
 import TautulliAPI from '@server/api/tautulli';
 import { MediaType } from '@server/constants/media';
-import { MediaServerType } from '@server/constants/server';
 import { UserType } from '@server/constants/user';
 import dataSource, { getRepository } from '@server/datasource';
 import Media from '@server/entity/Media';
@@ -17,7 +16,12 @@ import type {
   UserResultsResponse,
   UserWatchDataResponse,
 } from '@server/interfaces/api/userInterfaces';
-import { Permission, hasPermission } from '@server/lib/permissions';
+import {
+  Permission,
+  canModifyUser,
+  hasPermission,
+} from '@server/lib/permissions';
+import { findPlexUserMatch } from '@server/lib/plexUserMatch';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
 import { isAuthenticated } from '@server/middleware/auth';
@@ -675,38 +679,49 @@ router.post(
         const account = rawUser.$;
 
         if (account.email) {
-          const user = await userRepository
-            .createQueryBuilder('user')
-            .where('user.plexId = :id', { id: account.id })
-            .orWhere('user.email = :email', {
-              email: account.email.toLowerCase(),
-            })
-            .getOne();
+          const plexId = parseInt(account.id);
+          const { user, emailOnly } = await findPlexUserMatch({
+            id: plexId,
+            email: account.email,
+          });
 
           if (user) {
-            // Update the user's avatar with their Plex thumbnail, in case it changed
-            user.avatar = account.thumb;
-            user.email = account.email;
-            user.plexUsername = account.username;
+            if (emailOnly) {
+              logger.warn(
+                'Skipping Plex user whose email belongs to a Seerr user with another media server account',
+                {
+                  label: 'API',
+                  userId: user.id,
+                  plexId: account.id,
+                  plexUsername: account.username,
+                }
+              );
+              continue;
+            }
 
-            // In case the user was previously a local account
-            if (user.userType === UserType.LOCAL) {
-              user.userType = UserType.PLEX;
-              user.plexId = parseInt(account.id);
+            user.plexId = plexId;
+            user.plexUsername = account.username;
+            user.userType = user.resolveUserType();
+
+            // Email and avatar follow the user's primary identity, so only
+            // refresh them from Plex when that identity is Plex.
+            if (user.userType === UserType.PLEX) {
+              user.avatar = account.thumb;
+              user.email = account.email;
             }
             await userRepository.save(user);
             refreshedUsers += 1;
           } else if (!body || body.plexIds.includes(account.id)) {
-            if (await mainPlexTv.checkUserAccess(parseInt(account.id))) {
+            if (await mainPlexTv.checkUserAccess(plexId)) {
               const newUser = new User({
                 plexUsername: account.username,
                 email: account.email,
                 permissions: settings.main.defaultPermissions,
-                plexId: parseInt(account.id),
+                plexId,
                 plexToken: '',
                 avatar: account.thumb,
-                userType: UserType.PLEX,
               });
+              newUser.userType = newUser.resolveUserType();
               await userRepository.save(newUser);
               createdUsers.push(newUser);
             }
@@ -724,6 +739,96 @@ router.post(
   }
 );
 
+class LinkError extends Error {
+  constructor(
+    public status: number,
+    message: string
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * Prepares Jellyfin accounts to be attached to existing Seerr users, for when
+ * one person already has a Seerr user through the other provider. Every link
+ * is checked and nothing is saved; the caller saves the returned users.
+ *
+ * Linking hands sign-in for the target user to whoever holds the Jellyfin
+ * account, so it follows the same rules as editing that user: only the owner
+ * may touch the owner or another admin.
+ */
+const prepareJellyfinLinks = async (
+  links: { jellyfinUserId: string; userId: number }[],
+  jellyfinUsersById: Map<string | null, { Id: string; Name: string }>,
+  requester?: User
+): Promise<{ users: User[]; jellyfinIds: Set<string> }> => {
+  const userRepository = getRepository(User);
+  const seenJellyfinIds = new Set<string>();
+  const seenUserIds = new Set<number>();
+
+  if (!links.length) {
+    return { users: [], jellyfinIds: seenJellyfinIds };
+  }
+
+  const resolved = links.map((link) => {
+    const jellyfinUserId = normalizeJellyfinGuid(link.jellyfinUserId);
+    const jellyfinUser = jellyfinUsersById.get(jellyfinUserId);
+
+    if (!jellyfinUserId || !jellyfinUser) {
+      throw new LinkError(400, 'Unknown Jellyfin user.');
+    }
+    if (seenJellyfinIds.has(jellyfinUserId) || seenUserIds.has(link.userId)) {
+      throw new LinkError(400, 'Each account can only be linked once.');
+    }
+    seenJellyfinIds.add(jellyfinUserId);
+    seenUserIds.add(link.userId);
+    return { userId: link.userId, jellyfinUser };
+  });
+
+  const [alreadyLinked, targets] = await Promise.all([
+    userRepository.exist({
+      where: { jellyfinUserId: In([...seenJellyfinIds]) },
+    }),
+    userRepository.find({ where: { id: In([...seenUserIds]) } }),
+  ]);
+  if (alreadyLinked) {
+    throw new LinkError(
+      422,
+      'The specified account is already linked to a Seerr user.'
+    );
+  }
+
+  const targetsById = new Map(targets.map((user) => [user.id, user]));
+  const users = resolved.map(({ userId, jellyfinUser }) => {
+    const user = targetsById.get(userId);
+    if (!user) {
+      throw new LinkError(404, 'User not found.');
+    }
+    if (user.jellyfinUserId) {
+      throw new LinkError(
+        422,
+        'The specified user already has a linked Jellyfin account.'
+      );
+    }
+    if (!canModifyUser(user, requester)) {
+      throw new LinkError(
+        403,
+        'You do not have permission to modify this user.'
+      );
+    }
+
+    user.jellyfinUserId = jellyfinUser.Id;
+    user.jellyfinUsername = jellyfinUser.Name;
+    user.jellyfinDeviceId = Buffer.from(
+      user.id === 1 ? 'BOT_seerr' : `BOT_seerr_${jellyfinUser.Name}`
+    ).toString('base64');
+    user.userType = user.resolveUserType();
+    return user;
+  });
+
+  return { users, jellyfinIds: seenJellyfinIds };
+};
+
 router.post(
   '/import-from-jellyfin',
   isAuthenticated(Permission.MANAGE_USERS),
@@ -731,7 +836,12 @@ router.post(
     try {
       const settings = getSettings();
       const userRepository = getRepository(User);
-      const body = req.body as { jellyfinUserIds: string[] };
+      const body = req.body as {
+        jellyfinUserIds?: string[];
+        // Existing Seerr users to attach a Jellyfin account to instead of
+        // creating a new user for it.
+        links?: { jellyfinUserId: string; userId: number }[];
+      };
 
       // taken from auth.ts
       const admin = await userRepository.findOneOrFail({
@@ -761,20 +871,31 @@ router.post(
         ])
       );
 
-      for (const rawJellyfinUserId of body.jellyfinUserIds) {
-        const jellyfinUserId = normalizeJellyfinGuid(rawJellyfinUserId);
-        if (!jellyfinUserId) {
-          continue;
-        }
+      const { users: linkedUsers, jellyfinIds: linkedIds } =
+        await prepareJellyfinLinks(
+          body.links ?? [],
+          jellyfinUsersById,
+          req.user
+        );
 
+      const newIds = [
+        ...new Set(
+          (body.jellyfinUserIds ?? []).map((id) => normalizeJellyfinGuid(id))
+        ),
+      ].filter((id): id is string => !!id && !linkedIds.has(id));
+      const alreadyImported = new Set(
+        (
+          await userRepository.find({
+            select: ['jellyfinUserId'],
+            where: { jellyfinUserId: In(newIds) },
+          })
+        ).map((user) => user.jellyfinUserId)
+      );
+
+      for (const jellyfinUserId of newIds) {
         const jellyfinUser = jellyfinUsersById.get(jellyfinUserId);
 
-        const user = await userRepository.findOne({
-          select: ['id', 'jellyfinUserId'],
-          where: { jellyfinUserId: jellyfinUserId },
-        });
-
-        if (!user) {
+        if (!alreadyImported.has(jellyfinUserId)) {
           const newUser = new User({
             jellyfinUsername: jellyfinUser?.Name,
             jellyfinUserId: jellyfinUser?.Id,
@@ -784,18 +905,28 @@ router.post(
             email: jellyfinUser?.Name,
             permissions: settings.main.defaultPermissions,
             avatar: `/avatarproxy/${jellyfinUser?.Id}`,
-            userType:
-              settings.main.mediaServerType === MediaServerType.JELLYFIN
-                ? UserType.JELLYFIN
-                : UserType.EMBY,
           });
-
-          await userRepository.save(newUser);
+          // Derived from the linked account rather than the media server type:
+          // Jellyfin may only be an authentication provider here, in which case
+          // mediaServerType would report the wrong flavour entirely.
+          newUser.userType = newUser.resolveUserType();
           createdUsers.push(newUser);
         }
       }
-      return res.status(201).json(User.filterMany(createdUsers));
+
+      // Links and new users land together or not at all, so a failure part
+      // way through never leaves a retry facing links it already made.
+      await dataSource.transaction((manager) =>
+        manager.save([...linkedUsers, ...createdUsers])
+      );
+
+      return res
+        .status(201)
+        .json(User.filterMany([...linkedUsers, ...createdUsers]));
     } catch (e) {
+      if (e instanceof LinkError) {
+        return next({ status: e.status, message: e.message });
+      }
       next({ status: 500, message: e.message });
     }
   }

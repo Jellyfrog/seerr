@@ -7,12 +7,17 @@ import Dropdown from '@app/components/Common/Dropdown';
 import PageTitle from '@app/components/Common/PageTitle';
 import LinkJellyfinQuickConnectModal from '@app/components/UserProfile/UserSettings/UserLinkedAccountsSettings/LinkJellyfinQuickConnectModal';
 import useSettings from '@app/hooks/useSettings';
-import { Permission, UserType, useUser } from '@app/hooks/useUser';
+import { Permission, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
+import {
+  getJellyfinServerName,
+  hasJellyfinAccount,
+  hasPlexAccount,
+} from '@app/utils/mediaServer';
 import PlexOAuth from '@app/utils/plex';
 import { TrashIcon } from '@heroicons/react/24/solid';
-import { MediaServerType } from '@server/constants/server';
+import { ServerType } from '@server/constants/server';
 import axios from 'axios';
 import { useRouter } from 'next/router';
 import { useMemo, useState } from 'react';
@@ -70,26 +75,30 @@ const UserLinkedAccountsSettings = () => {
 
   const applicationName = settings.currentSettings.applicationTitle;
 
+  const jellyfinServerName = getJellyfinServerName(
+    settings.currentSettings.jellyfinServerType
+  );
+
+  // Both providers can be linked at once, so the list is driven by which
+  // account names are actually present rather than by the user's primary type.
   const accounts: LinkedAccount[] = useMemo(() => {
     const accounts: LinkedAccount[] = [];
     if (!user) return accounts;
-    if (user.userType === UserType.PLEX && user.plexUsername)
+    if (user.plexUsername && hasPlexAccount(user))
       accounts.push({
         type: LinkedAccountType.Plex,
         username: user.plexUsername,
       });
-    if (user.userType === UserType.EMBY && user.jellyfinUsername)
+    if (user.jellyfinUsername)
       accounts.push({
-        type: LinkedAccountType.Emby,
-        username: user.jellyfinUsername,
-      });
-    if (user.userType === UserType.JELLYFIN && user.jellyfinUsername)
-      accounts.push({
-        type: LinkedAccountType.Jellyfin,
+        type:
+          jellyfinServerName === ServerType.EMBY
+            ? LinkedAccountType.Emby
+            : LinkedAccountType.Jellyfin,
         username: user.jellyfinUsername,
       });
     return accounts;
-  }, [user]);
+  }, [user, jellyfinServerName]);
 
   const linkPlexAccount = async () => {
     setError(null);
@@ -125,23 +134,14 @@ const UserLinkedAccountsSettings = () => {
         plexOAuth.preparePopup();
         setTimeout(() => linkPlexAccount(), 1500);
       },
-      hide:
-        settings.currentSettings.mediaServerType !== MediaServerType.PLEX ||
-        accounts.some((a) => a.type === LinkedAccountType.Plex),
+      hide: !settings.currentSettings.plexLinkEnabled || hasPlexAccount(user),
     },
     {
-      name: 'Jellyfin',
+      name: jellyfinServerName,
       action: () => setShowJellyfinModal(true),
       hide:
-        settings.currentSettings.mediaServerType !== MediaServerType.JELLYFIN ||
-        accounts.some((a) => a.type === LinkedAccountType.Jellyfin),
-    },
-    {
-      name: 'Emby',
-      action: () => setShowJellyfinModal(true),
-      hide:
-        settings.currentSettings.mediaServerType !== MediaServerType.EMBY ||
-        accounts.some((a) => a.type === LinkedAccountType.Emby),
+        !settings.currentSettings.jellyfinLinkEnabled ||
+        hasJellyfinAccount(user),
     },
   ].filter((l) => !l.hide);
 
@@ -177,7 +177,24 @@ const UserLinkedAccountsSettings = () => {
     );
   }
 
-  const enableMediaServerUnlink = user?.id !== 1 && passwordInfo?.hasPassword;
+  // Unlinking must leave the user with a way back in: either a local password,
+  // or the account on the OTHER provider, whose sign-in must itself still be
+  // enabled. This mirrors hasRemainingLoginMethod() on the server — offering an
+  // unlink the server then rejects is worse than not offering it, so the check
+  // is per provider rather than "some other account exists".
+  const canUnlink = (type: LinkedAccountType) => {
+    if (user?.id === 1) {
+      return false;
+    }
+
+    if (passwordInfo?.hasPassword) {
+      return true;
+    }
+
+    return type === LinkedAccountType.Plex
+      ? settings.currentSettings.jellyfinLogin && hasJellyfinAccount(user)
+      : settings.currentSettings.plexLogin && hasPlexAccount(user);
+  };
 
   return (
     <>
@@ -214,9 +231,12 @@ const UserLinkedAccountsSettings = () => {
       {error && <Alert title={error} type="error" />}
       {accounts.length ? (
         <ul className="space-y-4">
-          {accounts.map((acct, i) => (
+          {accounts.map((acct) => (
+            // Keyed by account, not position: after an unlink the next row
+            // would otherwise inherit the armed ConfirmButton and delete on a
+            // single click.
             <li
-              key={i}
+              key={acct.type}
               className="flex items-center gap-4 overflow-hidden rounded-lg bg-gray-800/50 px-4 py-5 shadow ring-1 ring-gray-700 sm:p-6"
             >
               <div className="w-12">
@@ -239,7 +259,7 @@ const UserLinkedAccountsSettings = () => {
                 </div>
               </div>
               <div className="flex-grow" />
-              {enableMediaServerUnlink && (
+              {canUnlink(acct.type) && (
                 <ConfirmButton
                   onClick={() => {
                     deleteRequest(

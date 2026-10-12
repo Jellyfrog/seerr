@@ -22,8 +22,14 @@ export const runMigrations = async (
     }
     await fs.writeFile(BACKUP_PATH, JSON.stringify(settings, undefined, ' '));
 
+    // Only real migration modules: a co-located test or type declaration has no
+    // default export, and calling one as a migration aborts startup.
     const migrations = (await fs.readdir(migrationsDir)).filter(
-      (file) => file.endsWith('.js') || file.endsWith('.ts')
+      (file) =>
+        (file.endsWith('.js') || file.endsWith('.ts')) &&
+        !file.endsWith('.test.js') &&
+        !file.endsWith('.test.ts') &&
+        !file.endsWith('.d.ts')
     );
 
     const settingsBefore = JSON.stringify(migrated);

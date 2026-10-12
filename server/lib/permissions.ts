@@ -72,3 +72,15 @@ export const hasPermission = (
 
   return !!(value & Permission.ADMIN) || !!(value & total);
 };
+
+/**
+ * Whether `requester` may make changes that affect how `target` signs in, such
+ * as linking a media server account to them. Only the owner may do that to the
+ * owner or to another admin.
+ */
+export const canModifyUser = (
+  target: { id: number; permissions: number },
+  requester?: { id: number }
+): boolean =>
+  requester?.id === 1 ||
+  (target.id !== 1 && !hasPermission(Permission.ADMIN, target.permissions));

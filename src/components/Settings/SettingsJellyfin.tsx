@@ -3,20 +3,26 @@ import Button from '@app/components/Common/Button';
 import LoadingSpinner from '@app/components/Common/LoadingSpinner';
 import SensitiveInput from '@app/components/Common/SensitiveInput';
 import LibraryItem from '@app/components/Settings/LibraryItem';
+import SignInOnlyNotice from '@app/components/Settings/SignInOnlyNotice';
 import useSettings from '@app/hooks/useSettings';
 import useToasts from '@app/hooks/useToasts';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
+import {
+  getJellyfinServerName,
+  isJellyfinPrimary,
+  isPlexPrimary,
+} from '@app/utils/mediaServer';
 import { isValidURL } from '@app/utils/urlValidationHelper';
 import { ArrowDownOnSquareIcon } from '@heroicons/react/24/outline';
 import { ApiErrorCode } from '@server/constants/error';
-import { MediaServerType } from '@server/constants/server';
+import { MediaServerType, ServerType } from '@server/constants/server';
 import type { JellyfinSettings } from '@server/lib/settings';
 import axios from 'axios';
 import { Field, Formik } from 'formik';
 import { useState } from 'react';
 import { FormattedMessage, useIntl } from 'react-intl';
-import useSWR from 'swr';
+import useSWR, { mutate } from 'swr';
 import * as Yup from 'yup';
 
 const messages = defineMessages('components.Settings', {
@@ -42,6 +48,9 @@ const messages = defineMessages('components.Settings', {
   urlBase: 'URL Base',
   jellyfinForgotPasswordUrl: 'Forgot Password URL',
   apiKey: 'API key',
+  serverType: 'Server Type',
+  serverTypeTip:
+    'Whether this connection points at a Jellyfin or an Emby server.',
   jellyfinSyncFailedNoLibrariesFound: 'No libraries were found',
   jellyfinSyncFailedAutomaticGroupedFolders:
     'Custom authentication with Automatic Library Grouping not supported',
@@ -94,20 +103,23 @@ const SettingsJellyfin: React.FC<SettingsJellyfinProps> = ({
   isSetupSettings,
 }) => {
   const [isSyncing, setIsSyncing] = useState(false);
+  const settings = useSettings();
+  // With Plex as the media server, Jellyfin/Emby is only a sign-in provider:
+  // its libraries are never scanned, so their controls would do nothing.
+  const signInOnly = isPlexPrimary(settings.currentSettings.mediaServerType);
   const {
     data,
     error,
     mutate: revalidate,
   } = useSWR<JellyfinSettings>('/api/v1/settings/jellyfin');
   const { data: dataSync, mutate: revalidateSync } = useSWR<SyncStatus>(
-    '/api/v1/settings/jellyfin/sync',
+    signInOnly ? null : '/api/v1/settings/jellyfin/sync',
     {
       refreshInterval: (latestData) => (latestData?.running ? 1000 : 10000),
     }
   );
   const intl = useIntl();
   const { addToast } = useToasts();
-  const settings = useSettings();
 
   const JellyfinSettingsSchema = Yup.object().shape({
     hostname: Yup.string()
@@ -180,10 +192,9 @@ const SettingsJellyfin: React.FC<SettingsJellyfinProps> = ({
       } else if (e?.response?.data?.message === 'CONNECTION_ERROR') {
         addToast(
           intl.formatMessage(messages.jellyfinSyncFailedConnectionError, {
-            mediaServerName:
-              settings.currentSettings.mediaServerType === MediaServerType.EMBY
-                ? 'Emby'
-                : 'Jellyfin',
+            mediaServerName: getJellyfinServerName(
+              settings.currentSettings.jellyfinServerType
+            ),
           }),
           {
             autoDismiss: true,
@@ -245,174 +256,186 @@ const SettingsJellyfin: React.FC<SettingsJellyfinProps> = ({
   }
 
   const mediaServerFormatValues = {
-    mediaServerName:
-      settings.currentSettings.mediaServerType === MediaServerType.JELLYFIN
-        ? 'Jellyfin'
-        : settings.currentSettings.mediaServerType === MediaServerType.EMBY
-          ? 'Emby'
-          : undefined,
+    mediaServerName: getJellyfinServerName(
+      settings.currentSettings.jellyfinServerType
+    ),
   };
+
+  // The flavour is dictated by mediaServerType while Jellyfin/Emby is the media
+  // backend; it is only selectable when it acts purely as an auth provider.
+  const canChooseServerType = !isJellyfinPrimary(
+    settings.currentSettings.mediaServerType
+  );
 
   return (
     <>
-      <div className="mb-6">
-        <h3 className="heading">
-          {intl.formatMessage(
-            messages.jellyfinlibraries,
-            mediaServerFormatValues
-          )}
-        </h3>
-        <p className="description">
-          {intl.formatMessage(
-            messages.jellyfinlibrariesDescription,
-            mediaServerFormatValues
-          )}
-        </p>
-      </div>
-      <div className="section">
-        <Button onClick={() => syncLibraries()} disabled={isSyncing}>
-          <svg
-            className={`${isSyncing ? 'animate-spin' : ''} mr-1 h-5 w-5`}
-            fill="currentColor"
-            viewBox="0 0 20 20"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path
-              fillRule="evenodd"
-              d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z"
-              clipRule="evenodd"
-            />
-          </svg>
-          {isSyncing
-            ? intl.formatMessage(messages.syncing)
-            : intl.formatMessage(messages.syncJellyfin)}
-        </Button>
-        <ul className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4">
-          {data?.libraries.map((library) => (
-            <LibraryItem
-              name={library.name}
-              isEnabled={library.enabled}
-              key={`setting-library-${library.id}`}
-              onToggle={() => toggleLibrary(library.id)}
-            />
-          ))}
-        </ul>
-      </div>
-      <div className="mb-6 mt-10">
-        <h3 className="heading">
-          <FormattedMessage {...messages.manualscanJellyfin} />
-        </h3>
-        <p className="description">
-          {intl.formatMessage(
-            messages.manualscanDescriptionJellyfin,
-            mediaServerFormatValues
-          )}
-        </p>
-      </div>
-      <div className="section">
-        <div className="rounded-md bg-gray-800 p-4">
-          <div className="relative mb-6 h-8 w-full overflow-hidden rounded-full bg-gray-600">
-            {dataSync?.running && (
-              <div
-                className="h-8 bg-indigo-600 transition-all duration-200 ease-in-out"
-                style={{
-                  width: `${Math.round(
-                    (dataSync.progress / dataSync.total) * 100
-                  )}%`,
-                }}
-              />
-            )}
-            <div className="absolute inset-0 flex h-8 w-full items-center justify-center text-sm">
-              <span>
-                {dataSync?.running
-                  ? `${dataSync.progress} of ${dataSync.total}`
-                  : 'Not running'}
-              </span>
-            </div>
+      {signInOnly ? (
+        <SignInOnlyNotice
+          mediaServerName="Plex"
+          signInServerName={mediaServerFormatValues.mediaServerName}
+        />
+      ) : (
+        <>
+          <div className="mb-6">
+            <h3 className="heading">
+              {intl.formatMessage(
+                messages.jellyfinlibraries,
+                mediaServerFormatValues
+              )}
+            </h3>
+            <p className="description">
+              {intl.formatMessage(
+                messages.jellyfinlibrariesDescription,
+                mediaServerFormatValues
+              )}
+            </p>
           </div>
-          <div className="flex w-full flex-col sm:flex-row">
-            {dataSync?.running && (
-              <>
-                {dataSync.currentLibrary && (
-                  <div className="mb-2 mr-0 flex items-center sm:mb-0 sm:mr-2">
-                    <Badge>
-                      <FormattedMessage
-                        {...messages.currentlibrary}
-                        values={{ name: dataSync.currentLibrary.name }}
-                      />
-                    </Badge>
-                  </div>
+          <div className="section">
+            <Button onClick={() => syncLibraries()} disabled={isSyncing}>
+              <svg
+                className={`${isSyncing ? 'animate-spin' : ''} mr-1 h-5 w-5`}
+                fill="currentColor"
+                viewBox="0 0 20 20"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              {isSyncing
+                ? intl.formatMessage(messages.syncing)
+                : intl.formatMessage(messages.syncJellyfin)}
+            </Button>
+            <ul className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4">
+              {data?.libraries.map((library) => (
+                <LibraryItem
+                  name={library.name}
+                  isEnabled={library.enabled}
+                  key={`setting-library-${library.id}`}
+                  onToggle={() => toggleLibrary(library.id)}
+                />
+              ))}
+            </ul>
+          </div>
+          <div className="mb-6 mt-10">
+            <h3 className="heading">
+              <FormattedMessage {...messages.manualscanJellyfin} />
+            </h3>
+            <p className="description">
+              {intl.formatMessage(
+                messages.manualscanDescriptionJellyfin,
+                mediaServerFormatValues
+              )}
+            </p>
+          </div>
+          <div className="section">
+            <div className="rounded-md bg-gray-800 p-4">
+              <div className="relative mb-6 h-8 w-full overflow-hidden rounded-full bg-gray-600">
+                {dataSync?.running && (
+                  <div
+                    className="h-8 bg-indigo-600 transition-all duration-200 ease-in-out"
+                    style={{
+                      width: `${Math.round(
+                        (dataSync.progress / dataSync.total) * 100
+                      )}%`,
+                    }}
+                  />
                 )}
-                <div className="flex items-center">
-                  <Badge badgeType="warning">
-                    <FormattedMessage
-                      {...messages.librariesRemaining}
-                      values={{
-                        count: dataSync.currentLibrary
-                          ? dataSync.libraries.slice(
-                              dataSync.libraries.findIndex(
-                                (library) =>
-                                  library.id === dataSync.currentLibrary?.id
-                              ) + 1
-                            ).length
-                          : 0,
-                      }}
-                    />
-                  </Badge>
+                <div className="absolute inset-0 flex h-8 w-full items-center justify-center text-sm">
+                  <span>
+                    {dataSync?.running
+                      ? `${dataSync.progress} of ${dataSync.total}`
+                      : 'Not running'}
+                  </span>
                 </div>
-              </>
-            )}
-            <div className="flex-1 text-right">
-              {!dataSync?.running && (
-                <Button buttonType="warning" onClick={() => startScan()}>
-                  <svg
-                    className="mr-1 h-5 w-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                    />
-                  </svg>
-                  <FormattedMessage {...messages.startscan} />
-                </Button>
-              )}
+              </div>
+              <div className="flex w-full flex-col sm:flex-row">
+                {dataSync?.running && (
+                  <>
+                    {dataSync.currentLibrary && (
+                      <div className="mb-2 mr-0 flex items-center sm:mb-0 sm:mr-2">
+                        <Badge>
+                          <FormattedMessage
+                            {...messages.currentlibrary}
+                            values={{ name: dataSync.currentLibrary.name }}
+                          />
+                        </Badge>
+                      </div>
+                    )}
+                    <div className="flex items-center">
+                      <Badge badgeType="warning">
+                        <FormattedMessage
+                          {...messages.librariesRemaining}
+                          values={{
+                            count: dataSync.currentLibrary
+                              ? dataSync.libraries.slice(
+                                  dataSync.libraries.findIndex(
+                                    (library) =>
+                                      library.id === dataSync.currentLibrary?.id
+                                  ) + 1
+                                ).length
+                              : 0,
+                          }}
+                        />
+                      </Badge>
+                    </div>
+                  </>
+                )}
+                <div className="flex-1 text-right">
+                  {!dataSync?.running && (
+                    <Button buttonType="warning" onClick={() => startScan()}>
+                      <svg
+                        className="mr-1 h-5 w-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                        />
+                      </svg>
+                      <FormattedMessage {...messages.startscan} />
+                    </Button>
+                  )}
 
-              {dataSync?.running && (
-                <Button buttonType="danger" onClick={() => cancelScan()}>
-                  <svg
-                    className="mr-1 h-5 w-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
-                  <FormattedMessage {...messages.cancelscan} />
-                </Button>
-              )}
+                  {dataSync?.running && (
+                    <Button buttonType="danger" onClick={() => cancelScan()}>
+                      <svg
+                        className="mr-1 h-5 w-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M6 18L18 6M6 6l12 12"
+                        />
+                      </svg>
+                      <FormattedMessage {...messages.cancelscan} />
+                    </Button>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
-      {isSetupSettings && (
-        <div className="text-sm text-gray-500">
-          <span className="mr-2">
-            <Badge>{intl.formatMessage(messages.tip)}</Badge>
-          </span>
-          {intl.formatMessage(messages.scanbackground)}
-        </div>
+          {isSetupSettings && (
+            <div className="text-sm text-gray-500">
+              <span className="mr-2">
+                <Badge>{intl.formatMessage(messages.tip)}</Badge>
+              </span>
+              {intl.formatMessage(messages.scanbackground)}
+            </div>
+          )}
+        </>
       )}
       <div className="mb-6 mt-10">
         <h3 className="heading">
@@ -437,6 +460,8 @@ const SettingsJellyfin: React.FC<SettingsJellyfinProps> = ({
           jellyfinExternalUrl: data?.externalHostname || '',
           jellyfinForgotPasswordUrl: data?.jellyfinForgotPasswordUrl || '',
           apiKey: data?.apiKey,
+          serverType:
+            data?.serverType ?? settings.currentSettings.jellyfinServerType,
         }}
         validationSchema={JellyfinSettingsSchema}
         onSubmit={async (values) => {
@@ -449,6 +474,7 @@ const SettingsJellyfin: React.FC<SettingsJellyfinProps> = ({
               externalHostname: values.jellyfinExternalUrl,
               jellyfinForgotPasswordUrl: values.jellyfinForgotPasswordUrl,
               apiKey: values.apiKey,
+              serverType: Number(values.serverType),
             } as JellyfinSettings);
 
             addToast(
@@ -487,6 +513,9 @@ const SettingsJellyfin: React.FC<SettingsJellyfinProps> = ({
             }
           } finally {
             revalidate();
+            // The server type and connection feed public settings (labels,
+            // sign-in and import options), so refresh them too.
+            mutate('/api/v1/settings/public');
           }
         }}
       >
@@ -503,6 +532,28 @@ const SettingsJellyfin: React.FC<SettingsJellyfinProps> = ({
             <form className="section" onSubmit={handleSubmit}>
               {!isSetupSettings && (
                 <>
+                  {canChooseServerType && (
+                    <div className="form-row">
+                      <label htmlFor="serverType" className="text-label">
+                        {intl.formatMessage(messages.serverType)}
+                        <span className="label-tip">
+                          {intl.formatMessage(messages.serverTypeTip)}
+                        </span>
+                      </label>
+                      <div className="form-input-area">
+                        <div className="form-input-field">
+                          <Field as="select" id="serverType" name="serverType">
+                            <option value={MediaServerType.JELLYFIN}>
+                              {ServerType.JELLYFIN}
+                            </option>
+                            <option value={MediaServerType.EMBY}>
+                              {ServerType.EMBY}
+                            </option>
+                          </Field>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   <div className="form-row">
                     <label htmlFor="hostname" className="text-label">
                       {intl.formatMessage(messages.hostname)}

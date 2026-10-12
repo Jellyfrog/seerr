@@ -23,7 +23,7 @@ function initAvatarImageProxy() {
 
 function getJellyfinAvatarUrl(userId: string) {
   const settings = getSettings();
-  return settings.main.mediaServerType === MediaServerType.JELLYFIN
+  return settings.jellyfinServerType === MediaServerType.JELLYFIN
     ? `${getHostname()}/UserImage?UserId=${userId}`
     : `${getHostname()}/Users/${userId}/Images/Primary?quality=90`;
 }
@@ -54,12 +54,12 @@ export async function checkAvatarChanged(
 
     const settings = getSettings();
     let remoteVersion: string;
-    if (settings.main.mediaServerType === MediaServerType.JELLYFIN) {
+    if (settings.jellyfinServerType === MediaServerType.JELLYFIN) {
       const remoteLastModifiedStr = headResponse.headers['last-modified'] || '';
       remoteVersion = (
         Date.parse(remoteLastModifiedStr) || Date.now()
       ).toString();
-    } else if (settings.main.mediaServerType === MediaServerType.EMBY) {
+    } else if (settings.jellyfinServerType === MediaServerType.EMBY) {
       remoteVersion =
         headResponse.headers['etag']?.replace(/"/g, '') ||
         Date.now().toString();
@@ -100,11 +100,13 @@ export async function checkAvatarChanged(
 
 router.get('/:jellyfinUserId', async (req, res, next) => {
   if (!req.params.jellyfinUserId.match(/^[a-f0-9]{32}$/)) {
-    const mediaServerType = getSettings().main.mediaServerType;
+    const jellyfinServerType = getSettings().jellyfinServerType;
     return next({
       status: 400,
       message: `Provided URL is not ${
-        mediaServerType === MediaServerType.JELLYFIN ? 'a Jellyfin' : 'an Emby'
+        jellyfinServerType === MediaServerType.JELLYFIN
+          ? 'a Jellyfin'
+          : 'an Emby'
       } avatar.`,
     });
   }
