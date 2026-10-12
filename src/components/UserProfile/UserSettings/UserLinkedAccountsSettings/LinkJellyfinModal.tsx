@@ -173,8 +173,8 @@ const LinkJellyfinModal = ({
                     <div className="error">{errors.password}</div>
                   )}
                 </div>
-                {settings.currentSettings.mediaServerType ===
-                  MediaServerType.JELLYFIN && (
+                {settings.currentSettings.mediaServerType !==
+                  MediaServerType.EMBY && (
                   <div className="mt-4">
                     <Button
                       buttonType="ghost"

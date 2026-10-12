@@ -13,6 +13,7 @@ import { Permission, UserType, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import ErrorPage from '@app/pages/_error';
 import defineMessages from '@app/utils/defineMessages';
+import { hasPlexAccount, isPlexPrimary } from '@app/utils/mediaServer';
 import { ArrowDownOnSquareIcon } from '@heroicons/react/24/outline';
 import { ApiErrorCode } from '@server/constants/error';
 import type { UserSettingsGeneralResponse } from '@server/interfaces/api/userSettingsInterfaces';
@@ -125,6 +126,12 @@ const UserGeneralSettings = () => {
       data?.tvQuotaLimit != undefined && data?.tvQuotaDays != undefined
     );
   }, [data]);
+
+  // Plex owns this user's identity only when it is also the media server:
+  // only then does sign-in rewrite their email, and only then does watchlist
+  // sync run. The server applies the same rule.
+  const plexOwnsIdentity =
+    hasPlexAccount(user) && isPlexPrimary(currentSettings.mediaServerType);
 
   if (!data && !error) {
     return <LoadingSpinner />;
@@ -319,7 +326,7 @@ const UserGeneralSettings = () => {
                       name="email"
                       type="text"
                       placeholder="example@domain.com"
-                      disabled={user?.plexUsername}
+                      disabled={plexOwnsIdentity}
                       className={
                         user?.warnings.find((w) => w === 'userEmailRequired')
                           ? 'border-2 border-red-400 focus:border-blue-600'
@@ -507,7 +514,7 @@ const UserGeneralSettings = () => {
                 [Permission.AUTO_REQUEST, Permission.AUTO_REQUEST_MOVIE],
                 { type: 'or' }
               ) &&
-                user?.userType === UserType.PLEX && (
+                plexOwnsIdentity && (
                   <div className="form-row">
                     <label
                       htmlFor="watchlistSyncMovies"
@@ -555,7 +562,7 @@ const UserGeneralSettings = () => {
                 [Permission.AUTO_REQUEST, Permission.AUTO_REQUEST_TV],
                 { type: 'or' }
               ) &&
-                user?.userType === UserType.PLEX && (
+                plexOwnsIdentity && (
                   <div className="form-row">
                     <label htmlFor="watchlistSyncTv" className="checkbox-label">
                       <span>

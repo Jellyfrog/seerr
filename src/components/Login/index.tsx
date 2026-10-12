@@ -1,6 +1,5 @@
 import EmbyLogo from '@app/assets/services/emby-icon-only.svg';
 import JellyfinLogo from '@app/assets/services/jellyfin-icon.svg';
-import PlexLogo from '@app/assets/services/plex.svg';
 import Button from '@app/components/Common/Button';
 import ImageFader from '@app/components/Common/ImageFader';
 import PageTitle from '@app/components/Common/PageTitle';
@@ -11,6 +10,11 @@ import PlexLoginButton from '@app/components/Login/PlexLoginButton';
 import useSettings from '@app/hooks/useSettings';
 import { useUser } from '@app/hooks/useUser';
 import defineMessages from '@app/utils/defineMessages';
+import {
+  getJellyfinServerName,
+  getJellyfinServerType,
+  isPlexPrimary,
+} from '@app/utils/mediaServer';
 import { Transition } from '@headlessui/react';
 import { XCircleIcon } from '@heroicons/react/24/solid';
 import { MediaServerType } from '@server/constants/server';
@@ -40,8 +44,13 @@ const Login = () => {
   const [error, setError] = useState('');
   const [isProcessing, setProcessing] = useState(false);
   const [authToken, setAuthToken] = useState<string | undefined>(undefined);
+  // Whether the Jellyfin form is shown rather than the local one. Next to a
+  // Plex server Jellyfin only accepts linked accounts, so it leads only when
+  // there is no local form.
   const [mediaServerLogin, setMediaServerLogin] = useState(
-    settings.currentSettings.mediaServerLogin
+    settings.currentSettings.jellyfinLogin &&
+      (!isPlexPrimary(settings.currentSettings.mediaServerType) ||
+        !settings.currentSettings.localLogin)
   );
 
   // Effect that is triggered when the `authToken` comes back from the Plex OAuth
@@ -81,71 +90,60 @@ const Login = () => {
     revalidateOnFocus: false,
   });
 
-  const mediaServerName =
-    settings.currentSettings.mediaServerType === MediaServerType.PLEX
-      ? 'Plex'
-      : settings.currentSettings.mediaServerType === MediaServerType.JELLYFIN
-        ? 'Jellyfin'
-        : settings.currentSettings.mediaServerType === MediaServerType.EMBY
-          ? 'Emby'
-          : undefined;
+  // The Jellyfin/Emby form's server: Emby only as the media server itself, and
+  // Jellyfin otherwise, including as a sign-in provider next to Plex.
+  const jellyfinServerType = getJellyfinServerType(
+    settings.currentSettings.mediaServerType
+  );
+  const mediaServerName = getJellyfinServerName(
+    settings.currentSettings.mediaServerType
+  );
 
   const MediaServerLogo =
-    settings.currentSettings.mediaServerType === MediaServerType.PLEX
-      ? PlexLogo
-      : settings.currentSettings.mediaServerType === MediaServerType.JELLYFIN
-        ? JellyfinLogo
-        : settings.currentSettings.mediaServerType === MediaServerType.EMBY
-          ? EmbyLogo
-          : undefined;
+    jellyfinServerType === MediaServerType.EMBY ? EmbyLogo : JellyfinLogo;
 
-  const isJellyfin =
-    settings.currentSettings.mediaServerType === MediaServerType.JELLYFIN ||
-    settings.currentSettings.mediaServerType === MediaServerType.EMBY;
+  const isJellyfin = settings.currentSettings.jellyfinLogin;
   const mediaServerLoginRef = useRef<HTMLDivElement>(null);
   const localLoginRef = useRef<HTMLDivElement>(null);
   const loginRef = mediaServerLogin ? mediaServerLoginRef : localLoginRef;
 
-  const loginFormVisible =
-    (isJellyfin && settings.currentSettings.mediaServerLogin) ||
-    settings.currentSettings.localLogin;
+  const loginFormVisible = isJellyfin || settings.currentSettings.localLogin;
   const additionalLoginOptions = [
-    settings.currentSettings.mediaServerLogin &&
-      (settings.currentSettings.mediaServerType === MediaServerType.PLEX ? (
-        <PlexLoginButton
-          key="plex"
-          isProcessing={isProcessing}
-          onAuthToken={(authToken) => setAuthToken(authToken)}
-          large={!isJellyfin && !settings.currentSettings.localLogin}
-        />
+    settings.currentSettings.plexLogin && (
+      <PlexLoginButton
+        key="plex"
+        isProcessing={isProcessing}
+        onAuthToken={(authToken) => setAuthToken(authToken)}
+        large={!loginFormVisible}
+      />
+    ),
+    isJellyfin &&
+      settings.currentSettings.localLogin &&
+      (mediaServerLogin ? (
+        <Button
+          key="seerr"
+          data-testid="seerr-login-button"
+          className="flex-1 bg-transparent"
+          onClick={() => setMediaServerLogin(false)}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/os_icon.svg"
+            alt={settings.currentSettings.applicationTitle}
+            className="mr-2 h-5"
+          />
+          <span>{settings.currentSettings.applicationTitle}</span>
+        </Button>
       ) : (
-        settings.currentSettings.localLogin &&
-        (mediaServerLogin ? (
-          <Button
-            key="seerr"
-            data-testid="seerr-login-button"
-            className="flex-1 bg-transparent"
-            onClick={() => setMediaServerLogin(false)}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/os_icon.svg"
-              alt={settings.currentSettings.applicationTitle}
-              className="mr-2 h-5"
-            />
-            <span>{settings.currentSettings.applicationTitle}</span>
-          </Button>
-        ) : (
-          <Button
-            key="mediaserver"
-            data-testid="mediaserver-login-button"
-            className="flex-1 bg-transparent"
-            onClick={() => setMediaServerLogin(true)}
-          >
-            <MediaServerLogo />
-            <span>{mediaServerName}</span>
-          </Button>
-        ))
+        <Button
+          key="mediaserver"
+          data-testid="mediaserver-login-button"
+          className="flex-1 bg-transparent"
+          onClick={() => setMediaServerLogin(true)}
+        >
+          <MediaServerLogo />
+          <span>{mediaServerName}</span>
+        </Button>
       )),
   ].filter((o): o is JSX.Element => !!o);
 
@@ -219,7 +217,7 @@ const Login = () => {
                     (mediaServerLogin ||
                       !settings.currentSettings.localLogin) ? (
                       <JellyfinLogin
-                        serverType={settings.currentSettings.mediaServerType}
+                        serverType={jellyfinServerType}
                         revalidate={revalidate}
                       />
                     ) : (

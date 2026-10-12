@@ -26,3 +26,8 @@ export const hasPlexAccount = (user?: {
   plexUsername?: string | null;
   userType?: UserType;
 }): boolean => !!user?.plexUsername && user.userType !== UserType.LOCAL;
+
+/** Whether a user has a Jellyfin/Emby account linked; see `hasPlexAccount`. */
+export const hasJellyfinAccount = (user?: {
+  jellyfinUsername?: string | null;
+}): boolean => !!user?.jellyfinUsername;

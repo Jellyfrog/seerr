@@ -10,7 +10,7 @@ import useSettings from '@app/hooks/useSettings';
 import { Permission, UserType, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
-import { hasPlexAccount } from '@app/utils/mediaServer';
+import { hasJellyfinAccount, hasPlexAccount } from '@app/utils/mediaServer';
 import PlexOAuth from '@app/utils/plex';
 import { TrashIcon } from '@heroicons/react/24/solid';
 import { MediaServerType } from '@server/constants/server';
@@ -79,14 +79,12 @@ const UserLinkedAccountsSettings = () => {
         type: LinkedAccountType.Plex,
         username: user.plexUsername,
       });
-    if (user.userType === UserType.EMBY && user.jellyfinUsername)
+    if (user.jellyfinUsername)
       accounts.push({
-        type: LinkedAccountType.Emby,
-        username: user.jellyfinUsername,
-      });
-    if (user.userType === UserType.JELLYFIN && user.jellyfinUsername)
-      accounts.push({
-        type: LinkedAccountType.Jellyfin,
+        type:
+          user.userType === UserType.EMBY
+            ? LinkedAccountType.Emby
+            : LinkedAccountType.Jellyfin,
         username: user.jellyfinUsername,
       });
     return accounts;
@@ -127,14 +125,15 @@ const UserLinkedAccountsSettings = () => {
         setTimeout(() => linkPlexAccount(), 1500);
       },
       hide:
-        settings.currentSettings.mediaServerType !== MediaServerType.PLEX ||
+        !settings.currentSettings.plexLinkEnabled ||
         accounts.some((a) => a.type === LinkedAccountType.Plex),
     },
     {
       name: 'Jellyfin',
       action: () => setShowJellyfinModal(true),
       hide:
-        settings.currentSettings.mediaServerType !== MediaServerType.JELLYFIN ||
+        settings.currentSettings.mediaServerType === MediaServerType.EMBY ||
+        !settings.currentSettings.jellyfinLinkEnabled ||
         accounts.some((a) => a.type === LinkedAccountType.Jellyfin),
     },
     {
@@ -178,7 +177,24 @@ const UserLinkedAccountsSettings = () => {
     );
   }
 
-  const enableMediaServerUnlink = user?.id !== 1 && passwordInfo?.hasPassword;
+  // Unlinking must leave the user with a way back in: either a local password,
+  // or the account on the OTHER provider, whose sign-in must itself still be
+  // enabled. This mirrors hasRemainingLoginMethod() on the server — offering an
+  // unlink the server then rejects is worse than not offering it, so the check
+  // is per provider rather than "some other account exists".
+  const canUnlink = (type: LinkedAccountType) => {
+    if (user?.id === 1) {
+      return false;
+    }
+
+    if (passwordInfo?.hasPassword) {
+      return true;
+    }
+
+    return type === LinkedAccountType.Plex
+      ? settings.currentSettings.jellyfinLogin && hasJellyfinAccount(user)
+      : settings.currentSettings.plexLogin && hasPlexAccount(user);
+  };
 
   return (
     <>
@@ -242,7 +258,7 @@ const UserLinkedAccountsSettings = () => {
                 </div>
               </div>
               <div className="flex-grow" />
-              {enableMediaServerUnlink && (
+              {canUnlink(acct.type) && (
                 <ConfirmButton
                   onClick={() => {
                     deleteRequest(

@@ -5,7 +5,6 @@ import useSettings from '@app/hooks/useSettings';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
 import { getJellyfinServerName } from '@app/utils/mediaServer';
-import { MediaServerType } from '@server/constants/server';
 import { useIntl } from 'react-intl';
 
 const messages = defineMessages('components.Settings', {
@@ -40,17 +39,18 @@ const SettingsLayout = ({ children }: SettingsLayoutProps) => {
       route: '/settings/users',
       regex: /^\/settings\/users/,
     },
-    settings.currentSettings.mediaServerType === MediaServerType.PLEX
-      ? {
-          text: intl.formatMessage(messages.menuPlexSettings),
-          route: '/settings/plex',
-          regex: /^\/settings\/plex/,
-        }
-      : {
-          text: getAvailableMediaServerName(),
-          route: '/settings/jellyfin',
-          regex: /^\/settings\/jellyfin/,
-        },
+    // Both connections are always reachable: either can be the media backend,
+    // and the other can still be configured as an authentication provider.
+    {
+      text: intl.formatMessage(messages.menuPlexSettings),
+      route: '/settings/plex',
+      regex: /^\/settings\/plex/,
+    },
+    {
+      text: getAvailableMediaServerName(),
+      route: '/settings/jellyfin',
+      regex: /^\/settings\/jellyfin/,
+    },
     {
       text: intl.formatMessage(messages.menuServices),
       route: '/settings/services',
