@@ -1,4 +1,10 @@
 import { MediaServerType } from '@server/constants/server';
+import { UserType } from '@server/constants/user';
+import {
+  getJellyfinServerType,
+  isJellyfinPrimary,
+  isPlexPrimary,
+} from '@server/lib/mediaServer';
 import { Permission } from '@server/lib/permissions';
 import { runMigrations } from '@server/lib/settings/migrator';
 import type { AvailableLocale } from '@server/types/languages';
@@ -708,6 +714,30 @@ class Settings {
 
   set public(data: PublicSettings) {
     this.data.public = mergeSettings(this.data.public, data);
+  }
+
+  /** Whether Plex is the media backend. */
+  get plexIsPrimary(): boolean {
+    return isPlexPrimary(this.data.main.mediaServerType);
+  }
+
+  /** Whether Jellyfin/Emby is the media backend. */
+  get jellyfinIsPrimary(): boolean {
+    return isJellyfinPrimary(this.data.main.mediaServerType);
+  }
+
+  /**
+   * Whether the configured Jellyfin connection is a Jellyfin or an Emby server.
+   */
+  get jellyfinServerType(): MediaServerType.JELLYFIN | MediaServerType.EMBY {
+    return getJellyfinServerType(this.data.main.mediaServerType);
+  }
+
+  /** The user type that an account on the configured Jellyfin/Emby server gets. */
+  get jellyfinUserType(): UserType.JELLYFIN | UserType.EMBY {
+    return this.jellyfinServerType === MediaServerType.EMBY
+      ? UserType.EMBY
+      : UserType.JELLYFIN;
   }
 
   get fullPublicSettings(): FullPublicSettings {

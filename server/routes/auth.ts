@@ -1,11 +1,12 @@
 import JellyfinAPI from '@server/api/jellyfin';
 import PlexTvAPI from '@server/api/plextv';
 import { ApiErrorCode } from '@server/constants/error';
-import { MediaServerType, ServerType } from '@server/constants/server';
+import { MediaServerType } from '@server/constants/server';
 import { UserType } from '@server/constants/user';
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
 import { startJobs } from '@server/job/schedule';
+import { getJellyfinServerName } from '@server/lib/mediaServer';
 import { Permission } from '@server/lib/permissions';
 import { getSettings } from '@server/lib/settings';
 import logger from '@server/logger';
@@ -78,10 +79,12 @@ authRoutes.post('/plex', async (req, res, next) => {
     });
   }
 
+  const isInitialSetup =
+    settings.main.mediaServerType === MediaServerType.NOT_CONFIGURED;
+
   if (
-    settings.main.mediaServerType != MediaServerType.NOT_CONFIGURED &&
-    (settings.main.mediaServerLogin === false ||
-      settings.main.mediaServerType != MediaServerType.PLEX)
+    !isInitialSetup &&
+    (settings.main.mediaServerLogin === false || !settings.plexIsPrimary)
   ) {
     return res.status(500).json({ error: 'Plex login is disabled' });
   }
@@ -257,14 +260,14 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
     serverType?: number;
   };
 
-  //Make sure jellyfin login is enabled, but only if jellyfin && Emby is not already configured
+  // Media server not configured means we are mid-setup, where sign-in has to
+  // stay open so the first admin can be created.
+  const isInitialSetup =
+    settings.main.mediaServerType === MediaServerType.NOT_CONFIGURED;
+
   if (
-    // media server not configured, allow login for setup
-    settings.main.mediaServerType != MediaServerType.NOT_CONFIGURED &&
-    (settings.main.mediaServerLogin === false ||
-      // media server is neither jellyfin or emby
-      (settings.main.mediaServerType !== MediaServerType.JELLYFIN &&
-        settings.main.mediaServerType !== MediaServerType.EMBY))
+    !isInitialSetup &&
+    (settings.main.mediaServerLogin === false || !settings.jellyfinIsPrimary)
   ) {
     return res.status(500).json({ error: 'Jellyfin login is disabled' });
   }
@@ -433,16 +436,10 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
     }
     // User already exists, let's update their information
     else if (account.User.Id === user?.jellyfinUserId) {
+      const serverName = getJellyfinServerName(settings.main.mediaServerType);
+
       logger.info(
-        `Found matching ${
-          settings.main.mediaServerType === MediaServerType.JELLYFIN
-            ? ServerType.JELLYFIN
-            : ServerType.EMBY
-        } user; updating user with ${
-          settings.main.mediaServerType === MediaServerType.JELLYFIN
-            ? ServerType.JELLYFIN
-            : ServerType.EMBY
-        }`,
+        `Found matching ${serverName} user; updating user with ${serverName}`,
         {
           label: 'API',
           ip: req.ip,
@@ -532,11 +529,9 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
     switch (e.errorCode) {
       case ApiErrorCode.InvalidUrl:
         logger.error(
-          `The provided ${
-            settings.main.mediaServerType === MediaServerType.JELLYFIN
-              ? ServerType.JELLYFIN
-              : ServerType.EMBY
-          } is invalid or the server is not reachable.`,
+          `The provided ${getJellyfinServerName(
+            settings.main.mediaServerType
+          )} is invalid or the server is not reachable.`,
           {
             label: 'Auth',
             error: e.errorCode,
@@ -556,11 +551,9 @@ authRoutes.post('/jellyfin', async (req, res, next) => {
 
       case ApiErrorCode.ConnectionError:
         logger.error(
-          `Unable to reach the ${
-            settings.main.mediaServerType === MediaServerType.JELLYFIN
-              ? ServerType.JELLYFIN
-              : ServerType.EMBY
-          } server.`,
+          `Unable to reach the ${getJellyfinServerName(
+            settings.main.mediaServerType
+          )} server.`,
           {
             label: 'Auth',
             error: e.errorCode,
@@ -910,11 +903,7 @@ authRoutes.post('/logout', async (req, res, next) => {
     }
 
     const settings = getSettings();
-    const isJellyfinOrEmby =
-      settings.main.mediaServerType === MediaServerType.JELLYFIN ||
-      settings.main.mediaServerType === MediaServerType.EMBY;
-
-    if (isJellyfinOrEmby) {
+    if (settings.jellyfinIsPrimary) {
       const user = await getRepository(User)
         .createQueryBuilder('user')
         .addSelect(['user.jellyfinUserId', 'user.jellyfinDeviceId'])

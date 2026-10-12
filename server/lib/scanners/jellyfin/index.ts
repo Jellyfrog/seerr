@@ -12,7 +12,6 @@ import type {
   TmdbTvDetails,
   TmdbTvScanDetails,
 } from '@server/api/themoviedb/interfaces';
-import { MediaServerType } from '@server/constants/server';
 import { getRepository } from '@server/datasource';
 import { User } from '@server/entity/User';
 import type {
@@ -459,10 +458,7 @@ class JellyfinScanner
   public async run(): Promise<void> {
     const settings = getSettings();
 
-    if (
-      settings.main.mediaServerType != MediaServerType.JELLYFIN &&
-      settings.main.mediaServerType != MediaServerType.EMBY
-    ) {
+    if (!settings.jellyfinIsPrimary) {
       return;
     }
 
