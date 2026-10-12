@@ -300,10 +300,10 @@ userSettingsRoutes.post<{ authToken: string }>(
     }
 
     // valid plex user found, link to current user
-    user.userType = UserType.PLEX;
     user.plexId = account.id;
     user.plexUsername = account.username;
     user.plexToken = account.authToken;
+    user.userType = user.resolveUserType();
     await userRepository.save(user);
 
     return res.status(204).send();
@@ -348,10 +348,10 @@ userSettingsRoutes.delete<{ id: string }>(
         });
       }
 
-      user.userType = UserType.LOCAL;
       user.plexId = null;
       user.plexUsername = null;
       user.plexToken = null;
+      user.userType = user.resolveUserType();
       await userRepository.save(user);
 
       return res.status(204).send();
@@ -427,11 +427,11 @@ userSettingsRoutes.post<{ username: string; password: string }>(
       const user = req.user;
 
       // valid jellyfin user found, link to current user
-      user.userType = settings.jellyfinUserType;
       user.jellyfinUserId = account.User.Id;
       user.jellyfinUsername = account.User.Name;
       user.jellyfinAuthToken = account.AccessToken;
       user.jellyfinDeviceId = deviceId;
+      user.userType = user.resolveUserType();
       await userRepository.save(user);
 
       return res.status(204).send();
@@ -493,11 +493,11 @@ userSettingsRoutes.delete<{ id: string }>(
         });
       }
 
-      user.userType = UserType.LOCAL;
       user.jellyfinUserId = null;
       user.jellyfinUsername = null;
       user.jellyfinAuthToken = null;
       user.jellyfinDeviceId = null;
+      user.userType = user.resolveUserType();
       await userRepository.save(user);
 
       return res.status(204).send();
@@ -558,11 +558,11 @@ userSettingsRoutes.post<{ secret: string }>(
         user.id === 1 ? 'BOT_seerr' : `BOT_seerr_${user.username ?? ''}`
       ).toString('base64');
 
-      user.userType = UserType.JELLYFIN;
       user.jellyfinUserId = account.User.Id;
       user.jellyfinUsername = account.User.Name;
       user.jellyfinAuthToken = account.AccessToken;
       user.jellyfinDeviceId = deviceId;
+      user.userType = user.resolveUserType();
       await userRepository.save(user);
 
       return res.status(204).send();

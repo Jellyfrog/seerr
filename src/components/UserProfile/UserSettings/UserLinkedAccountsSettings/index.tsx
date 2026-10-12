@@ -10,6 +10,7 @@ import useSettings from '@app/hooks/useSettings';
 import { Permission, UserType, useUser } from '@app/hooks/useUser';
 import globalMessages from '@app/i18n/globalMessages';
 import defineMessages from '@app/utils/defineMessages';
+import { hasPlexAccount } from '@app/utils/mediaServer';
 import PlexOAuth from '@app/utils/plex';
 import { TrashIcon } from '@heroicons/react/24/solid';
 import { MediaServerType } from '@server/constants/server';
@@ -73,7 +74,7 @@ const UserLinkedAccountsSettings = () => {
   const accounts: LinkedAccount[] = useMemo(() => {
     const accounts: LinkedAccount[] = [];
     if (!user) return accounts;
-    if (user.userType === UserType.PLEX && user.plexUsername)
+    if (hasPlexAccount(user) && user.plexUsername)
       accounts.push({
         type: LinkedAccountType.Plex,
         username: user.plexUsername,
